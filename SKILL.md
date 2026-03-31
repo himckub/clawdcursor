@@ -1,6 +1,6 @@
 ---
 name: clawdcursor
-version: 0.7.2
+version: 0.7.5
 description: >
   OS-level desktop automation server. 40 tools for controlling any application
   on Windows/macOS/Linux. Model-agnostic — works with any AI that can do

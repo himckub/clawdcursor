@@ -19,11 +19,19 @@
 
 ---
 
-## What's New in v0.7.2
+## What's New in v0.7.5
 
-**Architecture overhaul. Universal tool server. True independence.**
+**Gemini 2.5 Flash support. New config schema. Cleaner architecture.**
 
-- **8-layer smart pipeline** — L0 (Browser) -> L1 (Action Router) -> L1.5 (Deterministic Flows) -> L2 (Skill Cache) -> L2.5 (OCR Reasoner) -> L2.5b (A11y Reasoner) -> L3 (Computer Use). Most tasks never reach L3.
+- **Google Gemini 2.5 Flash** — auto-detected from `GEMINI_API_KEY` or `GOOGLE_API_KEY`. One model handles both text and vision roles. 1M token context window. Budget-friendly at ~$0.15/1M tokens.
+- **New config schema** — `textModel`/`visionModel` field names (clearer than `layer2`/`layer3`). Old names still accepted for backward compatibility.
+- **Compilation config** — new `compilation` block in config: `{ ocr, a11y, cdp, parallel }` controls which perception channels are active.
+- **3-stage pipeline** — simplified description: Stage 1 (deterministic, free), Stage 2 (text LLM, cheap), Stage 3 (vision LLM, expensive).
+- **Model recommendations** — see table below for 2026 model picks per provider.
+
+### v0.7.2 features (still present)
+
+- **Smart pipeline** — L0 (Browser) -> L1 (Action Router) -> L1.5 (Deterministic Flows) -> L2 (Skill Cache) -> L2.5 (OCR Reasoner) -> L2.5b (A11y Reasoner) -> L3 (Computer Use). Most tasks never reach L3.
 - **40 universal tools** — served via REST (`GET /tools`, `POST /execute/:name`) and MCP stdio from a single definition. Any model that can call functions can control your desktop.
 - **3 transport modes** — `start` (full agent + tools), `serve` (tools only, bring your own brain), `mcp` (MCP stdio for Claude Code, Cursor, Windsurf, Zed)
 - **CDP browser integration** — Chrome DevTools Protocol for DOM interaction, text extraction, click-by-selector. Auto-connects to Edge/Chrome.
@@ -48,11 +56,11 @@
 - **Clipboard fallback** — catches a11y bridge failure, falls back to typeText
 - **Install verification** — `scripts/verify-install.js` checks Node version + native deps with platform-specific fix guidance
 
-### v0.6.3 vs v0.7.2
+### v0.6.3 vs v0.7.5
 
-| | v0.6.3 | v0.7.2 |
+| | v0.6.3 | v0.7.5 |
 |---|---|---|
-| **Architecture** | 4-layer pipeline (L0-L3) | 8-layer pipeline (L0, L1, L1.5, L2, L2.5, L2.5b, L3) |
+| **Architecture** | 4-layer pipeline (L0-L3) | 3-stage pipeline: deterministic → text LLM → vision LLM |
 | **Transport** | REST API only | REST + MCP stdio + tools-only server |
 | **Tools** | Monolithic agent, no tool exposure | 40 discrete tools, OpenAI function-calling format |
 | **Browser** | Playwright-only, no DOM access | CDP integration — click by selector, read text, type by label |
@@ -67,7 +75,7 @@
 | **Onboarding** | None — starts immediately | First-run consent flow for desktop control |
 | **MCP support** | None | Native MCP stdio for Claude Code, Cursor, Windsurf, Zed |
 | **Error reporting** | None | Opt-in redacted task log submission |
-| **Model coupling** | Anthropic-favored defaults | Truly model-agnostic — 13 providers auto-detected + any OpenAI-compatible endpoint |
+| **Model coupling** | Anthropic-favored defaults | Truly model-agnostic — 14 providers auto-detected + any OpenAI-compatible endpoint |
 | **OS support** | Windows only | Windows, macOS, Linux — platform-aware prompts, DPI, browser paths |
 | **Security** | Token in logs, no endpoint auth | Log sanitization, token fingerprint, auth on sensitive endpoints |
 
@@ -83,7 +91,7 @@ The hand has the intelligence — it reasons, plans, and decides what to do. The
 
 If it's visible on your screen, Clawd Cursor can interact with it. Native apps, web apps, legacy software, internal tools, desktop games — anything with a GUI. No app-specific integrations needed. No APIs to configure per-service. One universal interface that turns any AI into a desktop operator.
 
-This is what makes v0.7.2 different from every other automation tool: **it doesn't care which AI drives it.** Claude, GPT, Gemini, Llama running locally, a custom model you trained yourself, or a simple Python script making function calls. If it can call tools, it can control your computer.
+This is what makes v0.7.5 different from every other automation tool: **it doesn't care which AI drives it.** Claude, GPT, Gemini, Llama running locally, a custom model you trained yourself, or a simple Python script making function calls. If it can call tools, it can control your computer.
 
 ```
 Your AI (any model)          Clawd Cursor (the glove)
@@ -214,6 +222,12 @@ ollama pull qwen2.5:7b   # or any model
 clawdcursor start
 ```
 
+**Budget cloud (Gemini 2.5 Flash — recommended):**
+```bash
+echo "GEMINI_API_KEY=AIza..." > .env    # get free key at aistudio.google.com
+clawdcursor start
+```
+
 **Any cloud provider:**
 ```bash
 echo "AI_API_KEY=your-key-here" > .env
@@ -227,81 +241,80 @@ clawdcursor start --provider anthropic --api-key sk-ant-...
 clawdcursor start --base-url https://api.example.com/v1 --api-key KEY
 ```
 
-| Provider | Key prefix | Vision | Computer Use |
-|----------|-----------|--------|-------------|
-| Anthropic | `sk-ant-` | Yes | Yes |
-| OpenAI | `sk-` | Yes | No |
-| Groq | `gsk_` | Yes | No |
-| Together AI | - | Yes | No |
-| DeepSeek | `sk-` | Yes | No |
-| Kimi/Moonshot | `sk-` (long) | No | No |
-| Gemini (Google) | `AI...` | Yes | No |
-| Mistral | - | Yes | No |
-| xAI (Grok) | `xai-` | Yes | No |
-| Alibaba/Qwen (DashScope) | `sk-` | Yes | No |
-| Fireworks | `fw_...` | Yes | No |
-| Cohere | - | Yes | No |
-| Perplexity | `pplx-` | Yes | No |
-| Ollama (local) | - | Auto-detected | No |
-| Any OpenAI-compatible | - | Varies | No |
+| Provider | Key prefix | Vision | Computer Use | Budget |
+|----------|-----------|--------|-------------|--------|
+| Google (Gemini) | `AIza...` | Yes | No | ★ Best value |
+| Anthropic | `sk-ant-` | Yes | Yes | Premium |
+| OpenAI | `sk-` | Yes | No | Standard |
+| Groq | `gsk_` | Yes | No | Fast |
+| Together AI | - | Yes | No | Open models |
+| DeepSeek | `sk-` | Yes | No | Cheapest |
+| Kimi/Moonshot | `sk-` (long) | No | No | |
+| Mistral | - | Yes | No | |
+| xAI (Grok) | `xai-` | Yes | No | |
+| Alibaba/Qwen (DashScope) | `sk-` | Yes | No | |
+| Fireworks | `fw_...` | Yes | No | |
+| Cohere | - | Yes | No | |
+| Perplexity | `pplx-` | Yes | No | |
+| Ollama (local) | - | Auto-detected | No | Free |
+| Any OpenAI-compatible | - | Varies | No | |
 
 ---
 
 ## How It Works
 
-### The 8-Layer Pipeline
+### The 3-Stage Pipeline
 
-Every task flows through layers cheapest-first. Most tasks complete before Layer 3 — the expensive vision fallback.
+Every task flows through stages cheapest-first. Most tasks complete in Stage 1 or 2.
 
 ```
 User Task
     |
     v
-Pre-processor (1 cheap LLM call)
-    Decomposes compound tasks into structured intent:
-    {app, navigate, action, contextHints}
-    Local parser runs first (regex, zero LLM cost)
+Stage 1: Deterministic (free, instant)
+    Browser CDP: click by selector, read DOM, navigate
+    Action Router: regex + 30 keyboard shortcuts
+    Deterministic Flows: email compose, app switch (zero LLM)
+    Skill Cache: replay previously learned sequences
     |
     v
-Layer 0: Browser (free, instant)
-    Direct CDP: page.goto(), DOM reads, click by selector
-    |
-    v
-Layer 1: Action Router + Shortcuts (free, instant)
-    Regex matching + 30 keyboard shortcuts
-    "scroll down" -> Page Down, "save" -> Ctrl+S
-    |
-    v
-Layer 1.5: Deterministic Flows (free, instant)
-    Zero-LLM verified workflows for known patterns
-    Email compose, find & replace, app switching
-    |
-    v
-Layer 2: Skill Cache (free, instant)
-    Replays previously learned task sequences
-    Falls through on cache miss
-    |
-    v
-Layer 2.5: OCR Reasoner  [PRIMARY] (cheap, 1 text LLM call per step)
-    Screenshot -> OS-level OCR -> text snapshot -> cheap text LLM
+Stage 2: Text LLM (cheap — ~$0.001/task)
+    OCR Reasoner [PRIMARY]: screenshot -> OS OCR -> text snapshot -> cheap text LLM
+    A11y Reasoner [FALLBACK]: accessibility tree -> cheap text LLM
     LLM decides: click, type, key, scroll, drag, done
-    Stagnation detection (4 identical screens -> bail)
-    Done-verification (evidence matching before accepting completion)
-    System prompt rules for multi-field forms
+    Stagnation detection + done-verification built in
     |
     v
-Layer 2.5b: A11y Reasoner (fallback, 1 text LLM call)
-    Only runs when OCR Reasoner is unavailable
-    Accessibility tree -> cheap LLM -> structured actions
-    Circuit breaker on repeated failures
-    |
-    v
-Layer 3: Computer Use / Vision (expensive)
-    PATH A: Anthropic native Computer Use (claude-sonnet)
-    PATH B: Generic Computer Use (any OpenAI-compatible vision model)
+Stage 3: Vision LLM (expensive — ~$0.05/task)
+    PATH A: Anthropic Computer Use (claude-sonnet — most accurate)
+    PATH B: Any OpenAI-compatible vision model
     Screenshot -> vision LLM with function calling
-    20-step limit, taskbar click blocking, stagnation detection
+    Only reached when Stage 1+2 cannot resolve the task
 ```
+
+### Model Recommendations (2026)
+
+| Provider | Text model (Stage 2) | Vision model (Stage 3) | Notes |
+|----------|---------------------|----------------------|-------|
+| **Google (Gemini)** | `gemini-2.5-flash` | `gemini-2.5-flash` | **Budget pick** — one model for both, 1M ctx |
+| Anthropic | `claude-haiku-4-5` | `claude-sonnet-4-20250514` | Best accuracy, Computer Use support |
+| OpenAI | `gpt-4o-mini` | `gpt-4o` | Reliable, widely supported |
+| Groq | `llama-3.3-70b-versatile` | `llama-3.2-90b-vision-preview` | Fastest inference |
+| DeepSeek | `deepseek-chat` | `deepseek-chat` | Cheapest reasoning |
+| Ollama | *(auto-detected)* | *(auto-detected)* | Free, runs locally |
+
+### Cost Comparison (approximate, per 1K tasks)
+
+| Provider | Stage 2 cost | Stage 3 cost | Best for |
+|----------|-------------|-------------|---------|
+| Ollama (local) | $0 | $0 | Privacy, offline |
+| Google Gemini 2.5 Flash | ~$0.15 | ~$0.60 | Budget cloud |
+| DeepSeek Chat | ~$0.14 | ~$0.14 | Cheapest cloud |
+| Groq Llama | ~$0.59 | ~$2.70 | Speed |
+| OpenAI GPT-4o | ~$0.15 | ~$2.50 | Reliability |
+| Anthropic Claude | ~$0.80 | ~$15 | Accuracy, Computer Use |
+
+> **Tip:** Configure Gemini 2.5 Flash for both text and vision roles — it's the best single-model budget option. One API key, one model, handles everything.
 
 ### Action Verification
 

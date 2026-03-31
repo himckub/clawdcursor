@@ -348,7 +348,7 @@ export async function runDoctor(opts: {
       groq: 'GROQ_API_KEY — https://console.groq.com (fast inference)',
       together: 'TOGETHER_API_KEY — https://api.together.xyz (open models)',
       deepseek: 'DEEPSEEK_API_KEY — https://platform.deepseek.com (reasoning)',
-      gemini: 'GEMINI_API_KEY — https://aistudio.google.com (Gemini Flash/Pro)',
+      gemini: 'GEMINI_API_KEY — https://aistudio.google.com (Gemini 2.5 Flash — budget pick, 1M ctx, handles text+vision with one model)',
       mistral: 'MISTRAL_API_KEY — https://console.mistral.ai (Pixtral vision)',
       xai: 'XAI_API_KEY — https://console.x.ai (Grok vision)',
       alibaba: 'DASHSCOPE_API_KEY — https://dashscope.console.aliyun.com (Qwen)',
@@ -696,19 +696,31 @@ async function runSingleProviderFlow(
   // Save Config
   if (opts.save !== false) {
     const configPath = path.join(path.resolve(__dirname, '..'), CONFIG_FILE);
+    const singleTextEntry = {
+      enabled: pipeline.layer2.enabled,
+      model: pipeline.layer2.model,
+      baseUrl: pipeline.layer2.baseUrl,
+      provider: providerKey,
+    };
+    const singleVisionEntry = {
+      enabled: pipeline.layer3.enabled,
+      model: pipeline.layer3.model,
+      computerUse: pipeline.layer3.computerUse,
+      provider: providerKey,
+    };
     const configData = {
       provider: providerKey,
       pipeline: {
-        layer2: {
-          enabled: pipeline.layer2.enabled,
-          model: pipeline.layer2.model,
-          baseUrl: pipeline.layer2.baseUrl,
-        },
-        layer3: {
-          enabled: pipeline.layer3.enabled,
-          model: pipeline.layer3.model,
-          computerUse: pipeline.layer3.computerUse,
-        },
+        textModel: singleTextEntry,
+        visionModel: singleVisionEntry,
+        layer2: singleTextEntry,
+        layer3: singleVisionEntry,
+      },
+      compilation: {
+        ocr: true,
+        a11y: true,
+        cdp: true,
+        parallel: true,
       },
       diagnosedAt: new Date().toISOString(),
     };
@@ -1071,22 +1083,36 @@ function savePipelineConfig(pipeline: PipelineConfig, scanResults: ProviderScanR
   const layer2Scan = scanResults.find(s => s.key === layer2ProviderKey);
   const layer3Scan = scanResults.find(s => s.key === layer3ProviderKey);
 
+  const textModelEntry = {
+    enabled: pipeline.layer2.enabled,
+    model: pipeline.layer2.model,
+    baseUrl: pipeline.layer2.baseUrl,
+    provider: layer2ProviderKey,
+  };
+  const visionModelEntry = {
+    enabled: pipeline.layer3.enabled,
+    model: pipeline.layer3.model,
+    baseUrl: pipeline.layer3.baseUrl,
+    computerUse: pipeline.layer3.computerUse,
+    provider: layer3ProviderKey,
+  };
+
   const configData = {
     provider: pipeline.providerKey,
     pipeline: {
-      layer2: {
-        enabled: pipeline.layer2.enabled,
-        model: pipeline.layer2.model,
-        baseUrl: pipeline.layer2.baseUrl,
-        provider: layer2ProviderKey,
-      },
-      layer3: {
-        enabled: pipeline.layer3.enabled,
-        model: pipeline.layer3.model,
-        baseUrl: pipeline.layer3.baseUrl,
-        computerUse: pipeline.layer3.computerUse,
-        provider: layer3ProviderKey,
-      },
+      // Primary field names (v0.7.5+)
+      textModel: textModelEntry,
+      visionModel: visionModelEntry,
+      // Legacy field names for backward compatibility
+      layer2: textModelEntry,
+      layer3: visionModelEntry,
+    },
+    // Compilation features — which perception channels are enabled
+    compilation: {
+      ocr: true,
+      a11y: true,
+      cdp: true,
+      parallel: true,
     },
     // Store API keys by provider so we can reconstruct later
     providerKeys: Object.fromEntries(
@@ -1129,13 +1155,16 @@ function printNoProvidersHelp(results: DiagResult[]): void {
   console.log(`   Option 1 (Free, local):`);
   console.log(`      Install Ollama: https://ollama.ai`);
   console.log(`      Then: ollama pull <model>  (e.g. qwen2.5:7b, llama3.2, gemma2)\n`);
-  console.log(`   Option 2 (Cloud):`);
-  console.log(`      Get an API key from any OpenAI-compatible provider:`);
-  console.log(`      - Anthropic: https://console.anthropic.com (has Computer Use)`);
-  console.log(`      - OpenAI: https://platform.openai.com`);
-  console.log(`      - Groq: https://console.groq.com`);
-  console.log(`      - Together: https://api.together.xyz`);
-  console.log(`      - DeepSeek: https://platform.deepseek.com`);
+  console.log(`   Option 2 (Cloud — Budget pick):`);
+  console.log(`      Google Gemini 2.5 Flash — one model handles both text + vision roles`);
+  console.log(`      Cost: ~$0.15/1M input tokens, 1M context window`);
+  console.log(`      Get key: https://aistudio.google.com (free tier available)`);
+  console.log(`      Set: GEMINI_API_KEY=AIza...\n`);
+  console.log(`   Option 3 (Cloud — Best quality):`);
+  console.log(`      - Anthropic: https://console.anthropic.com (Computer Use, best accuracy)`);
+  console.log(`      - OpenAI: https://platform.openai.com (GPT-4o vision)`);
+  console.log(`      - Groq: https://console.groq.com (fastest inference)`);
+  console.log(`      - DeepSeek: https://platform.deepseek.com (reasoning)`);
   console.log(`      - Any OpenAI-compatible endpoint`);
   console.log(`      Then: clawdcursor install --api-key YOUR_KEY\n`);
 
@@ -1506,12 +1535,15 @@ export function loadPipelineConfig(): PipelineConfig | null {
     const resolvedDefault = resolveApiConfig();
     const defaultApiKey = scopedEnvKey || resolvedDefault.apiKey;
 
-    // Support mixed-provider configs saved by the new doctor
-    const layer2BaseUrl = raw.pipeline?.layer2?.baseUrl ?? provider.baseUrl;
-    const layer3BaseUrl = raw.pipeline?.layer3?.baseUrl ?? provider.baseUrl;
-    const layer3ProviderKey = raw.pipeline?.layer3?.provider || providerKey;
-    const layer3ComputerUse = raw.pipeline?.layer3?.computerUse ?? false;
-    const explicitLayer3ApiKey = raw.pipeline?.layer3?.apiKey;
+    // Support both v0.7.5+ (textModel/visionModel) and legacy (layer2/layer3) field names
+    const layer2Data = raw.pipeline?.textModel ?? raw.pipeline?.layer2;
+    const layer3Data = raw.pipeline?.visionModel ?? raw.pipeline?.layer3;
+
+    const layer2BaseUrl = layer2Data?.baseUrl ?? provider.baseUrl;
+    const layer3BaseUrl = layer3Data?.baseUrl ?? provider.baseUrl;
+    const layer3ProviderKey = layer3Data?.provider || providerKey;
+    const layer3ComputerUse = layer3Data?.computerUse ?? false;
+    const explicitLayer3ApiKey = layer3Data?.apiKey;
 
     return {
       provider,
@@ -1519,13 +1551,13 @@ export function loadPipelineConfig(): PipelineConfig | null {
       apiKey: defaultApiKey,
       layer1: true,
       layer2: {
-        enabled: raw.pipeline?.layer2?.enabled ?? false,
-        model: raw.pipeline?.layer2?.model ?? provider.textModel,
+        enabled: layer2Data?.enabled ?? false,
+        model: layer2Data?.model ?? provider.textModel,
         baseUrl: layer2BaseUrl,
       },
       layer3: {
-        enabled: raw.pipeline?.layer3?.enabled ?? false,
-        model: raw.pipeline?.layer3?.model ?? provider.visionModel,
+        enabled: layer3Data?.enabled ?? false,
+        model: layer3Data?.model ?? provider.visionModel,
         baseUrl: layer3BaseUrl,
         computerUse: layer3ComputerUse,
         apiKey: layer3ComputerUse
