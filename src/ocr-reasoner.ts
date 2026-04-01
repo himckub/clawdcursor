@@ -341,10 +341,27 @@ export class OcrReasoner {
         if (filtered.length > 0) {
           filteredOcr = { ...ocrResult, elements: filtered };
         } else {
-          // All elements filtered out — likely a loading screen with no OCR text
-          // in the target window, or a coordinate-space mismatch. Fall back to
-          // the full unfiltered set so the LLM can still see the screen context.
+          // All elements filtered out — likely a WebView2 app (new Outlook, Teams)
+          // or a loading screen. Fall back to unfiltered set.
           console.log(`   [OCR] Window filter returned 0 — using unfiltered elements as fallback`);
+
+          // v0.7.5: Early bail for WebView2/opaque apps — if first 2 steps both
+          // show 0 elements in window, OCR is blind to this app. Bail to vision immediately.
+          if (step >= 1 && ocrFingerprints.length >= 1) {
+            const prevFiltered = ocrFingerprints[ocrFingerprints.length - 1];
+            // Check if previous step also had 0 window elements (fingerprint from unfiltered = taskbar noise)
+            if (filtered.length === 0 && prevFiltered === filteredOcr.elements.map(el => el.text).join('|').substring(0, 800)) {
+              console.warn(`   [OCR] ⚠️ WebView2/opaque app detected — 0 elements in window for 2 consecutive scans. Bailing to vision.`);
+              return {
+                handled: false,
+                success: false,
+                description: 'OCR cannot see window content (WebView2/opaque app) — falling through to vision',
+                steps: stepCount,
+                fallbackReason: 'cannot_read',
+                actionLog,
+              };
+            }
+          }
         }
       }
 

@@ -20,8 +20,9 @@ import { supportsOpenAiToolCalls, type PipelineConfig } from './providers';
 import type { TaskLogger } from './task-logger';
 import type { TaskVerifier } from './verifiers';
 
-// v0.7.5: Vision Filler — max 5 iterations. It fills gaps, doesn't plan.
-const MAX_ITERATIONS = 5;
+// v0.7.5: Vision Filler — 15 iterations for complex UI tasks (email, forms).
+// Capped from 25 (wasteful) but 5 was too tight for multi-field workflows.
+const MAX_ITERATIONS = 15;
 const IS_MAC = os.platform() === 'darwin';
 const LLM_TARGET_WIDTH = 1280;
 
