@@ -397,7 +397,7 @@ export class OcrReasoner {
       }
 
       // 3. Build the UI snapshot string
-      const snapshot = this.buildSnapshot(filteredOcr, a11ySnippet, a11yElements, actionLog, task, priorContext);
+      const snapshot = this.buildSnapshot(filteredOcr, a11ySnippet, a11yElements, actionLog, task, priorContext, windowBounds);
 
       // 4. Ask the text LLM for the next action (with sliding window)
       messages.push({ role: 'user', content: snapshot });
@@ -613,6 +613,7 @@ export class OcrReasoner {
     actionLog: Array<{ action: string; description: string }>,
     task: string,
     priorContext?: string[],
+    windowBounds?: { x: number; y: number; width: number; height: number } | null,
   ): string {
     // Group OCR elements by line for readability, assign sequential element IDs
     let elementId = 0;
@@ -710,6 +711,37 @@ export class OcrReasoner {
       ocrLines.push(`... (${ocrResult.elements.length - kept.length} more elements — scroll if needed)`);
     }
 
+    // ── Spatial Layout Analysis ──
+    // Detect screen zones from OCR element positions: toolbar, sidebar, content area.
+    // Tells the LLM WHERE the empty content area is so it clicks in the right place.
+    let layoutSummary = '';
+    if (ocrResult.elements.length > 5 && windowBounds && windowBounds.width > 100) {
+      const wb = windowBounds;
+      const els = ocrResult.elements;
+      // Find element-dense horizontal bands (toolbar = top, statusbar = bottom)
+      const topEls = els.filter(e => e.y < wb.y + wb.height * 0.15);
+      const botEls = els.filter(e => e.y > wb.y + wb.height * 0.85);
+      const leftEls = els.filter(e => e.x < wb.x + wb.width * 0.15 && e.y > wb.y + wb.height * 0.15 && e.y < wb.y + wb.height * 0.85);
+      const rightEls = els.filter(e => e.x > wb.x + wb.width * 0.85 && e.y > wb.y + wb.height * 0.15 && e.y < wb.y + wb.height * 0.85);
+
+      // Content area = the large gap between toolbar and statusbar, excluding sidebars
+      const toolbarBottom = topEls.length > 0 ? Math.max(...topEls.map(e => e.y + e.height)) + 20 : wb.y + 100;
+      const statusTop = botEls.length > 0 ? Math.min(...botEls.map(e => e.y)) - 20 : wb.y + wb.height - 60;
+      const sidebarRight = leftEls.length > 3 ? Math.max(...leftEls.map(e => e.x + e.width)) + 20 : wb.x + 50;
+      const sidebarLeft = rightEls.length > 3 ? Math.min(...rightEls.map(e => e.x)) - 20 : wb.x + wb.width - 50;
+
+      const contentX = Math.round((sidebarRight + sidebarLeft) / 2);
+      const contentY = Math.round((toolbarBottom + statusTop) / 2);
+
+      layoutSummary = `\n=== SCREEN LAYOUT ===\n` +
+        `Window: ${wb.width}×${wb.height} at (${wb.x},${wb.y})\n` +
+        `Toolbar zone: y < ${Math.round(toolbarBottom)} (${topEls.length} elements — menus, buttons)\n` +
+        `Content area: center ≈ (${contentX}, ${contentY}) — this is the main workspace/document/canvas. CLICK HERE to interact.\n` +
+        (leftEls.length > 3 ? `Left sidebar: x < ${Math.round(sidebarRight)} (${leftEls.length} elements)\n` : '') +
+        (rightEls.length > 3 ? `Right sidebar: x > ${Math.round(sidebarLeft)} (${rightEls.length} elements)\n` : '') +
+        `Status bar: y > ${Math.round(statusTop)} (${botEls.length} elements)\n`;
+    }
+
     const ocrText = ocrLines.length > 0
       ? ocrLines.join('\n')
       : '(no text detected — screen may be blank or contain only images)';
@@ -737,7 +769,7 @@ export class OcrReasoner {
 
     return `=== TASK ===
 ${task}
-${contextStr}${calcHelper}
+${contextStr}${calcHelper}${layoutSummary}
 === SCREEN SNAPSHOT (OCR — coordinates in real screen pixels) ===
 ${ocrText}
 ${a11ySnippet}
