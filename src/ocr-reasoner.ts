@@ -403,6 +403,7 @@ export class OcrReasoner {
       const contextMessages = this.applyWindow(messages);
 
       let llmResponse: string;
+      const llmStart = Date.now();
       try {
         llmResponse = await this.callOcrLLM(contextMessages);
       } catch (err: any) {
@@ -430,7 +431,8 @@ export class OcrReasoner {
         return { handled: false, success: false, description: 'Task aborted', steps: stepCount, actionLog };
       }
 
-      console.log(`   [OCR] LLM response: ${llmResponse.substring(0, 200)}`);
+      const llmMs = Date.now() - llmStart;
+      console.log(`   [OCR] LLM response (${llmMs}ms): ${llmResponse.substring(0, 200)}`);
       messages.push({ role: 'assistant', content: llmResponse });
 
       // 5. Parse the action
@@ -455,7 +457,8 @@ export class OcrReasoner {
       }
 
       // 6. Execute the action
-      console.log(`   [OCR] Step ${stepCount}: ${action.action} — ${this.describeAction(action)}`);
+      const stepElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`   [OCR] Step ${stepCount} (${stepElapsed}s): ${action.action} — ${this.describeAction(action)}`);
       actionLog.push({ action: action.action, description: this.describeAction(action) });
 
       if (action.action === 'done') {
@@ -806,9 +809,11 @@ What is the SINGLE NEXT ACTION to accomplish this task? Respond with JSON only.`
   private async callOcrLLM(messages: Array<{ role: string; content: string }>): Promise<string> {
     const layer3 = this.pipelineConfig.layer3;
     const layer2 = this.pipelineConfig.layer2;
-    // Prefer layer3 model (Sonnet) — much better at spatial reasoning from text coordinates
-    const model = layer3.enabled ? layer3.model : layer2.model;
-    const baseUrl = layer3.enabled ? layer3.baseUrl : layer2.baseUrl;
+    // Always use the TEXT model (Layer 2) for OCR Reasoner calls.
+    // OCR Reasoner sends text snapshots, not images — it doesn't need a vision model.
+    // Using the vision model here fails for reasoning models (kimi-k2.5) that reject temperature=0.
+    const model = layer2.model;
+    const baseUrl = layer2.baseUrl;
     const apiKey = this.pipelineConfig.apiKey || '';
     const isAnthropic = !this.pipelineConfig.provider.openaiCompat
       && !baseUrl.includes('localhost')
