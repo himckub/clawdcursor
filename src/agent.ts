@@ -165,7 +165,9 @@ export class Agent {
   }
 
   private inferProviderLabel(apiKey?: string, baseUrl?: string, fallback?: string): string {
-    const inferredFromUrl = this.inferProviderFromBaseUrl(baseUrl);
+    // Use the canonical inferProviderFromBaseUrl from credentials.ts (no duplication)
+    const { inferProviderFromBaseUrl } = require('./credentials');
+    const inferredFromUrl = inferProviderFromBaseUrl(baseUrl);
     if (inferredFromUrl) return inferredFromUrl;
 
     if (apiKey && apiKey.length > 0) {
@@ -173,22 +175,6 @@ export class Agent {
     }
 
     return fallback || 'unknown';
-  }
-
-  private inferProviderFromBaseUrl(baseUrl?: string): string | null {
-    const url = (baseUrl || '').toLowerCase();
-    if (!url) return null;
-    if (url.includes('anthropic')) return 'anthropic';
-    if (url.includes('moonshot') || url.includes('kimi')) return 'kimi';
-    if (url.includes('11434') || url.includes('ollama')) return 'ollama';
-    if (url.includes('openai')) return 'openai';
-    if (url.includes('groq')) return 'groq';
-    if (url.includes('together')) return 'together';
-    if (url.includes('deepseek')) return 'deepseek';
-    if (url.includes('nvidia') || url.includes('integrate.api')) return 'nvidia';
-    if (url.includes('mistral')) return 'mistral';
-    if (url.includes('fireworks')) return 'fireworks';
-    return null;
   }
 
   /** Maximize a window via Win32 ShowWindow API. If pid is provided, finds the window by process ID. */
@@ -370,8 +356,9 @@ public class WinAPI {
 
     // Only enable Anthropic Computer Use if the pipeline provider IS Anthropic.
     // Otherwise, a stale Anthropic key from OpenClaw auth-profiles causes false positives.
-    const pipelineIsAnthropic = pipelineConfig?.providerKey === 'anthropic';
-    if (pipelineIsAnthropic && ComputerUseBrain.isSupported(this.config, computerUseOverrides)) {
+    // Use provider capability flag instead of hardcoded provider name check
+    const pipelineHasNativeCU = !!pipelineConfig?.provider?.computerUse;
+    if (pipelineHasNativeCU && ComputerUseBrain.isSupported(this.config, computerUseOverrides)) {
       this.computerUse = new ComputerUseBrain(this.config, this.desktop, this.a11y, this.safety, computerUseOverrides);
       this.computerUse.setVerifier(this.verifier);
       console.log(`🖥️  Computer Use API enabled (Anthropic native tool + accessibility)`);

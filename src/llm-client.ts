@@ -141,7 +141,7 @@ async function _callText(opts: InternalCallOptions): Promise<string> {
       const canUseJsonMode = supportsOpenAiJsonMode(opts.providerProfile);
       const result = isAnthropic
         ? await _callAnthropic({ baseUrl, model, authHeaders, system, user, rawMessages, forceJson, maxTokens, timeoutMs })
-        : await _callOpenAI({ baseUrl, model, authHeaders, system, user, rawMessages, forceJson, maxTokens, timeoutMs, canUseJsonMode });
+        : await _callOpenAI({ baseUrl, model, authHeaders, system, user, rawMessages, forceJson, maxTokens, timeoutMs, canUseJsonMode, isReasoningModel: !!opts.providerProfile?.reasoningVisionModel });
 
       return result;
     } catch (err) {
@@ -175,6 +175,7 @@ async function _callOpenAI(p: {
   maxTokens: number;
   timeoutMs?: number;
   canUseJsonMode?: boolean;
+  isReasoningModel?: boolean;
 }): Promise<string> {
   // Build messages: either from rawMessages or from system+user
   let messages: Array<{ role: string; content: string }>;
@@ -192,8 +193,9 @@ async function _callOpenAI(p: {
     messages,
     max_tokens: p.maxTokens,
   };
-  // kimi-k2.5 and similar reasoning models only accept temperature=1 or omitted
-  if (!p.model.startsWith('kimi-k2')) {
+  // Reasoning models (kimi-k2.5, etc.) reject temperature=0 — omit it.
+  // Uses declarative flag instead of hardcoded model name matching.
+  if (!p.isReasoningModel) {
     body.temperature = 0;
   }
   if (p.forceJson && p.canUseJsonMode !== false) {
@@ -429,7 +431,8 @@ async function _callVisionOpenAI(p: DirectVisionLLMOptions & { authHeaders: Reco
     messages,
     max_tokens: p.maxTokens || 1024,
   };
-  if (!p.model.startsWith('kimi-k2')) {
+  // Reasoning models reject temperature=0 — use provider flag, not model name
+  if (!p.providerProfile?.reasoningVisionModel) {
     body.temperature = 0;
   }
   if (p.forceJson && supportsOpenAiJsonMode(p.providerProfile)) {

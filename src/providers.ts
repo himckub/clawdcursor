@@ -29,6 +29,9 @@ export interface ProviderProfile {
   supportsJsonMode?: boolean;
   /** Whether OpenAI-style tool calls are known to work reliably */
   supportsToolCalls?: boolean;
+  /** Whether the vision model is a reasoning/thinking model (omit temperature, accept reasoning_content).
+   *  Examples: kimi-k2.5, deepseek-reasoner. These models reject temperature=0. */
+  reasoningVisionModel?: boolean;
 }
 
 /** Minimum context window in tokens for reliable desktop automation.
@@ -86,6 +89,7 @@ export const PROVIDERS: Record<string, ProviderProfile> = {
     computerUse: false,
     supportsJsonMode: true,
     supportsToolCalls: true,
+    reasoningVisionModel: true,
   },
   groq: {
     name: 'Groq',

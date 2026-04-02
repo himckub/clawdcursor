@@ -74,7 +74,7 @@ function pick(...values: Array<string | undefined>): string | undefined {
   return undefined;
 }
 
-function inferProviderFromBaseUrl(baseUrl?: string): string | undefined {
+export function inferProviderFromBaseUrl(baseUrl?: string): string | undefined {
   const url = (baseUrl || '').toLowerCase();
   if (!url) return undefined;
   if (url.includes('anthropic')) return 'anthropic';
