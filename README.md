@@ -31,6 +31,10 @@
 - **Task classifier** — zero-cost regex classifier routes tasks to optimal pipeline stage (mechanical/navigation/reasoning/spatial).
 - **Guide registry CLI** — `clawdcursor guides available` lists 86 apps. `clawdcursor guides install spotify` downloads shortcuts. Community-driven knowledge base.
 - **Lazy guide loading** — guides inject into the LLM context only when the target app is detected, after the first screenshot.
+- **Adaptive learning** — successful tasks save their action sequences to app guide JSON. Next time the same app is used, Stage 2 reads the learned workflow and executes it natively — no vision fallback needed. The system gets smarter with every interaction.
+- **`returnPartial` mode** — external agents (OpenClaw, Claude Code) send `POST /task {"returnPartial": true}`. If Stage 2 fails, control returns to the calling agent instead of burning tokens on Stage 3 vision. The agent finishes with MCP tools (smarter than one-shot vision).
+- **`POST /learn` endpoint** — after completing a task with MCP tools, agents report what worked. Saves workflows, keyboard shortcuts, and tips to the app's guide JSON. Community-driven knowledge base that grows with every interaction.
+- **Per-layer API keys** — mixed-provider pipelines (e.g., Kimi text + Anthropic vision) use separate API keys per layer. No more auth failures from sending the wrong key to the wrong provider.
 - **New config schema** — `textModel`/`visionModel` field names. Old names still accepted.
 - **Memory leak fixes** — buffer release in OCR engine, TERMINAL env var quoting for Linux.
 - **Cross-platform hardening** — Linux GPU detection, PID file locking, signal handlers.
