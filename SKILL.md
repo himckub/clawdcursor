@@ -343,16 +343,48 @@ When you submit a task via REST, poll for completion:
 
 **Critical endpoints:**
 ```
-POST /task           {"task": "..."}           → submit task
-GET  /status                                   → poll state
-POST /confirm        {"approved": true/false}  → approve/reject safety pause
-POST /abort                                    → stop current task
-GET  /task-logs                                → recent task results (JSONL)
-GET  /screenshot                               → current screen as PNG
-GET  /logs                                     → last 200 console entries (debug)
+POST /task           {"task": "...", "returnPartial": true}  → submit task
+GET  /status                                                 → poll state
+POST /confirm        {"approved": true/false}                → approve/reject safety pause
+POST /abort                                                  → stop current task
+POST /learn          {"processName": "...", "task": "...", "actions": [...], "shortcuts": {...}, "tips": [...]}  → teach clawdcursor
+GET  /task-logs                                              → recent task results (JSONL)
+GET  /screenshot                                             → current screen as PNG
+GET  /logs                                                   → last 200 console entries (debug)
 ```
 
 All mutating endpoints require `Authorization: Bearer <token>` header. Token is saved to `~/.clawdcursor/token` on startup.
+
+### returnPartial mode (for external agents)
+
+When you send `{"returnPartial": true}` with POST /task, clawdcursor skips Stage 3 (expensive vision) and returns control to you if Stage 2 fails:
+
+```json
+{"partial": true, "stepsCompleted": [...], "context": "Stage 2 opened app but got stuck on dialog"}
+```
+
+You then finish the task with MCP tools (smarter than Stage 3's one-shot vision loop). When done, call POST /learn to teach clawdcursor what worked — the workflow is saved to the app's JSON guide so Stage 2 handles it natively next time.
+
+### POST /learn (adaptive learning)
+
+After completing a task with MCP tools, report what you did:
+
+```json
+POST /learn
+{
+  "processName": "EXCEL",
+  "task": "create table with headers",
+  "actions": [
+    {"action": "key", "description": "Press Ctrl+Home to go to A1"},
+    {"action": "type", "description": "Type Product"},
+    {"action": "key", "description": "Press Tab to next column"}
+  ],
+  "shortcuts": {"next_cell": "Tab", "next_row": "Enter"},
+  "tips": ["Use Tab between columns, Enter between rows"]
+}
+```
+
+This enriches the app's guide JSON. Next time Stage 2 sees this app, it reads the learned workflow and shortcuts — handling the task without fallback.
 
 > **Windows PowerShell note:** Use `curl.exe` (with .exe) or `Invoke-RestMethod`, NOT bare `curl`. PowerShell aliases `curl` to `Invoke-WebRequest` which behaves differently.
 
