@@ -265,6 +265,9 @@ export function createServer(agent: Agent, config: ClawdConfig): express.Express
     }
 
     const { task } = parsed.data;
+    // returnPartial: when true, skip Stage 3 vision and return partial results
+    // so the calling agent can finish with MCP tools (smarter than one-shot vision)
+    const returnPartial = req.body.returnPartial === true;
     const state = agent.getState();
     if (state.status !== 'idle') {
       return res.status(409).json({
@@ -273,16 +276,65 @@ export function createServer(agent: Agent, config: ClawdConfig): express.Express
       });
     }
 
-    console.log(`\n${e('📨', '>')} New task received: ${task}`);
+    console.log(`\n${e('📨', '>')} New task received: ${task}${returnPartial ? ' (returnPartial — skip vision fallback)' : ''}`);
+
+    // Pass returnPartial to agent so it knows to skip Stage 3
+    if (returnPartial) {
+      (agent as any)._returnPartial = true;
+    }
 
     // Execute async — respond immediately
     agent.executeTask(task).then(result => {
+      (agent as any)._returnPartial = false;
       console.log(`\n${e('📋', '>')} Task result:`, JSON.stringify(result, null, 2));
     }).catch(err => {
+      (agent as any)._returnPartial = false;
       console.error(`\n${e('❌', '[ERR]')} Task execution failed:`, err);
     });
 
-    res.json({ accepted: true, task });
+    res.json({ accepted: true, task, returnPartial });
+  });
+
+  // Learn — external agents report what they discovered about an app
+  // Saves workflows, shortcuts, and tips to the app's guide JSON
+  app.post('/learn', requireAuth, async (req, res) => {
+    const { processName, task, actions, shortcuts, tips } = req.body;
+    if (!processName) {
+      return res.status(400).json({ error: 'Missing "processName" in body' });
+    }
+
+    try {
+      const { saveLesson, loadGuide } = require('../dist/guide-loader');
+      const fs = require('fs');
+      const path = require('path');
+
+      // Save learned workflow from action sequence
+      if (task && actions && Array.isArray(actions)) {
+        saveLesson(processName, task, actions);
+      }
+
+      // Merge additional shortcuts and tips into the guide
+      const guidesDir = path.join(__dirname, '..', 'guides');
+      const guide = loadGuide(processName);
+      if (guide && (shortcuts || tips)) {
+        const guidePath = path.join(guidesDir, (guide.processNames?.[0] || processName) + '.json');
+        if (fs.existsSync(guidePath)) {
+          const raw = JSON.parse(fs.readFileSync(guidePath, 'utf8'));
+          if (shortcuts && typeof shortcuts === 'object') {
+            raw.shortcuts = { ...raw.shortcuts, ...shortcuts };
+          }
+          if (tips && Array.isArray(tips)) {
+            raw.tips = [...new Set([...(raw.tips || []), ...tips])];
+          }
+          fs.writeFileSync(guidePath, JSON.stringify(raw, null, 2));
+        }
+      }
+
+      console.log(`${e('📝', '[LEARN]')} External agent reported lesson for "${processName}"`);
+      res.json({ saved: true, processName });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // Get current status

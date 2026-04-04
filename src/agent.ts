@@ -1173,6 +1173,24 @@ Examples:
         console.log(`   🤷 Stage 2 → Stage 3 (${unifiedResult.steps} steps, ${(unifiedDuration / 1000).toFixed(1)}s): ${(unifiedResult.description ?? 'no description').substring(0, 100)}`);
       }
 
+      // returnPartial: skip Stage 3, return control to the calling agent.
+      // The calling agent (OpenClaw, Claude Code) can finish with MCP tools — it's smarter
+      // than our one-shot vision loop. The partial result includes what Stage 2 accomplished.
+      if ((this as any)._returnPartial) {
+        console.log(`   🔄 Returning partial result to calling agent (Stage 3 skipped — agent can finish with MCP tools)`);
+        steps.push({
+          action: 'partial',
+          description: `Stage 2 partially completed. Steps taken: ${unifiedResult?.actionLog?.length || 0}. ` +
+            `Context: ${unifiedResult?.description || 'no details'}. ` +
+            `Remaining subtasks: ${subtasks.slice(i + 1).join(', ') || 'none'}`,
+          success: false,
+          timestamp: Date.now(),
+          layer: 'unified' as any,
+          method: 'partial_return' as any,
+        });
+        break;
+      }
+
       // Stage 3: Vision Filler — takes over when TextNavigator signals cannot_proceed (max 5 iterations)
       const enrichedContext = [...(priorContext ?? [])];
       if (unifiedResult?.actionLog && unifiedResult.actionLog.length > 0) {

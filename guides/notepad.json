@@ -1,6 +1,9 @@
 {
   "app": "Notepad",
-  "processNames": ["notepad", "Notepad"],
+  "processNames": [
+    "notepad",
+    "Notepad"
+  ],
   "workflows": {
     "type_text": "Click anywhere in the text area (the large white space). Start typing. Text appears at the cursor position.",
     "save_as": "Press Ctrl+Shift+S. Type the filename in the 'File name' field. Navigate to the save location using the left sidebar or address bar. Click Save. If a 'Save as Markdown' dialog appears, click 'Save as text file'.",
@@ -32,5 +35,9 @@
     "Use Ctrl+Shift+S (NOT Ctrl+S) when you need to save with a specific filename.",
     "If a 'Save as Markdown' dialog appears, click 'Save as text file' for .txt files.",
     "Windows 11 Notepad supports tabs — each tab is a separate document."
-  ]
+  ],
+  "learnedWorkflows": {
+    "type_clawdcursor_v075_shipped_with_adapt": "Click Click in the center of the content area to start typing at (1920,1188). Type text",
+    "save_the_file_as_adaptivetesttxt_on_the_": "Click \"File\". Click Click on the File menu in Notepad to access save options at (56,113). Click Click on Save as option in Notepad at (78,634). Click Click on the Name field to type the new file name at (9,270). Type text. Click Click the Save button to save the file at (1547,1066). Click Navigate to Desktop in the Save As dialog at (633,119). Click Click the Save button after selecting Desktop at (1547,1066)"
+  }
 }
