@@ -121,7 +121,13 @@
     "close_a_dialog_or_cancel_a_process_such_": "Ctrl+Esc",
     "open_the_autofilter_menu_dialog": "Alt+Down",
     "open_the_go_to_dialog": "F5",
-    "recalculate_all_formulas_in_the_power_pi": "F9"
+    "recalculate_all_formulas_in_the_power_pi": "F9",
+    "next_cell": "Tab",
+    "next_row": "Enter",
+    "go_to_a1": "Ctrl+Home",
+    "select_all": "Ctrl+A",
+    "save": "Ctrl+S",
+    "save_as": "Ctrl+Shift+S"
   },
   "sections": {
     "Navigating in cells": {
@@ -266,7 +272,11 @@
     "When the Start Screen is showing, you must create or open a workbook before you can enter data.",
     "Keyboard shortcuts reference for Excel.",
     "Source: https://support.office.com/en-us/article/keyboard-shortcuts-in-excel-1798d9d5-842a-42b8-9c99-9b7213f0040f",
-    "(Custom workflows preserved from existing guide)"
+    "(Custom workflows preserved from existing guide)",
+    "Use Tab to move between columns, Enter to move to next row",
+    "Type data with Tab characters inline to fill multiple cells in one paste",
+    "Formulas start with = sign (e.g., =B2*C2)",
+    "Dismiss Document Recovery panel by clicking Close at bottom-left"
   ],
   "workflows": {
     "create_table": "Click cell A1. Type the first header. Press Tab to move to the next column. Type the next header. Press Enter to go to the next row. Type data in each cell, pressing Tab between columns and Enter between rows. DO NOT use Insert > Table from the ribbon — just type directly into cells.",
@@ -283,5 +293,8 @@
     "workspace": "The large grid of cells (A1, B1, C1...) — this is where ALL data entry happens",
     "sheet_tabs": "Bottom of window — Sheet1, Sheet2, etc.",
     "status_bar": "Very bottom — shows Ready, cell count, sum, average"
+  },
+  "learnedWorkflows": {
+    "create_table_with_headers_and_formula": "Press Press Ctrl+Home to go to cell A1. Type text. Press Press Tab to move to B1. Type text. Press Press Tab to move to C1. Type text. Press Press Tab to move to D1. Type text. Press Press Enter to go to next row. Click Click cell A2. Type text. Press Press Enter to confirm formula"
   }
 }
