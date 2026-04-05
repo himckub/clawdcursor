@@ -113,6 +113,11 @@ describe('focus_window — Bug 4: off-screen recovery', () => {
     // After focusWindow: still at (-14, -14)
     mockGetWindows
       .mockResolvedValueOnce([
+        // Phantom window scan (no phantoms — small window, on-screen)
+        { processId: 42, processName: 'notepad', title: 'Notepad', bounds: { x: 100, y: 100, width: 800, height: 600 }, isMinimized: false },
+      ])
+      .mockResolvedValueOnce([
+        // Window lookup for target matching
         { processId: 42, processName: 'notepad', title: 'Notepad', bounds: { x: 100, y: 100, width: 800, height: 600 }, isMinimized: false },
       ])
       .mockResolvedValueOnce([
