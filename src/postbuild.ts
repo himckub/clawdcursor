@@ -7,6 +7,7 @@
 console.log(`
 🐾 Clawd Cursor built successfully! Available commands:
 
+  clawdcursor status    Check readiness (consent, permissions, AI config)
   clawdcursor consent   Accept desktop control permissions (required once)
   clawdcursor doctor    Auto-detect and configure your AI providers
   clawdcursor install   Set up API key + run doctor in one step
@@ -19,6 +20,7 @@ console.log(`
   clawdcursor report    Send an error report to help improve the agent
   clawdcursor uninstall Remove all config and data
 
-  Quick start:  clawdcursor start
-  MCP mode:     clawdcursor mcp
+  First time?   clawdcursor status   (check what's needed)
+  Quick start:  clawdcursor start    (handles consent + setup)
+  MCP mode:     clawdcursor mcp      (for Claude Code, Cursor, etc.)
 `);

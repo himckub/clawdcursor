@@ -35,6 +35,7 @@ import type {
 import { DEFAULT_CONFIG } from './types';
 import { resolveApiConfig } from './credentials';
 import { callVisionLLMDirect } from './llm-client';
+import { hasConsent } from './onboarding';
 
 const CONFIG_FILE = '.clawdcursor-config.json';
 const execFileAsync = promisify(execFile);
@@ -201,6 +202,17 @@ export async function runDoctor(opts: {
   // ─── 0. Version Check ───────────────────────────────────────────
   console.log('📦 Version check...');
   await checkForUpdates(results);
+
+  // ─── 0b. Consent Check ──────────────────────────────────────────
+  console.log('📝 Consent check...');
+  const consentGranted = hasConsent();
+  if (consentGranted) {
+    results.push({ name: 'Desktop control consent', ok: true, detail: 'Granted' });
+    console.log('   ✅ Consent granted');
+  } else {
+    results.push({ name: 'Desktop control consent', ok: false, detail: 'Run: clawdcursor consent' });
+    console.log('   ❌ Consent not granted — run: clawdcursor consent');
+  }
 
   // ─── 1. Screen Capture ───────────────────────────────────────────
   console.log('📸 Screen capture...');
@@ -1180,6 +1192,8 @@ function printNoProvidersHelp(results: DiagResult[]): void {
  */
 function printSummary(results: DiagResult[], pipeline: PipelineConfig): void {
   const allOk = results.every(r => r.ok);
+  const consentMissing = results.some(r => r.name === 'Desktop control consent' && !r.ok);
+  
   console.log(`\n${'═'.repeat(50)}`);
   if (allOk) {
     console.log(`✅ All systems go! Run 'clawdcursor start' to begin.`);
@@ -1188,6 +1202,13 @@ function printSummary(results: DiagResult[], pipeline: PipelineConfig): void {
     console.log(`⚠️  ${failures.length} issue(s) detected:`);
     for (const f of failures) {
       console.log(`   ❌ ${f.name}: ${f.detail}`);
+    }
+
+    // Consent is critical — highlight it
+    if (consentMissing) {
+      console.log(`\n🔐 Consent required before desktop control can work:`);
+      console.log(`   Run: clawdcursor consent`);
+      console.log('');
     }
 
     const textFailed = !pipeline.layer2.enabled;

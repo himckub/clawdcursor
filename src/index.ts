@@ -426,6 +426,14 @@ program
   });
 
 program
+  .command('status')
+  .description('📊 Check readiness status (consent, permissions, AI config)')
+  .action(async () => {
+    const { printStatusReport } = await import('./readiness');
+    await printStatusReport();
+  });
+
+program
   .command('stop')
   .description('Stop a running Clawd Cursor instance')
   .option('--port <port>', 'API server port', '3847')
