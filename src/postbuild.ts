@@ -12,6 +12,7 @@ console.log(`
   clawdcursor doctor    Auto-detect and configure AI providers
   clawdcursor status    Check setup status
   clawdcursor stop      Stop the agent
+  clawdcursor uninstall Remove all config and data
 
   Run 'clawdcursor consent' first to grant desktop control permissions.
 `);
