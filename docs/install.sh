@@ -1,7 +1,7 @@
 #!/bin/bash
 # Clawd Cursor Installer for macOS / Linux
 # Usage: curl -fsSL https://clawdcursor.com/install.sh | bash
-# Specify version: VERSION=v0.7.8 curl -fsSL https://clawdcursor.com/install.sh | bash
+# Specify version: VERSION=v0.7.9 curl -fsSL https://clawdcursor.com/install.sh | bash
 
 set -e
 

@@ -2,6 +2,12 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
+## [0.7.9] - 2026-04-08 — UX Improvements
+
+### Changed
+- **macOS permission messages** — now direct users to enable "ClawdCursor" instead of "Terminal/Node"
+- **Screen Recording path** — updated to "Screen & System Audio Recording" (macOS Sequoia naming)
+
 ## [0.7.8] - 2026-04-08 — Documentation Fix
 
 ### Fixed
