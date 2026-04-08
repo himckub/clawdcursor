@@ -19,7 +19,19 @@
 
 ---
 
-## What's New in v0.7.5
+## What's New in v0.7.6
+
+**macOS Native Host App. Single permission grant. Localhost IPC.**
+
+- **macOS Host App (ClawdCursorHost)** — new native Swift app that owns all TCC permissions. Grant Accessibility and Screen Recording once to the app, not per-terminal session.
+- **Localhost IPC architecture** — CLI delegates desktop operations to the host app via HTTP on `127.0.0.1:3848`. Token-based auth with `~/.clawdcursor/host-token` (mode 0600).
+- **Auto-launch on start** — `clawdcursor start` automatically launches ClawdCursorHost if not running. `clawdcursor stop` gracefully quits it.
+- **New helper methods** — `moveMouse`, `dragMouse`, `captureScreen` added to native Swift helper for smoother macOS automation.
+- **Menu bar presence** — host app runs as a 🐾 menu bar icon for easy status visibility.
+- **Security hardening** — IPC server binds to localhost only (not 0.0.0.0), preventing network attacks.
+- **Windows/Linux unaffected** — all macOS-specific code is behind platform guards. Existing behavior unchanged.
+
+### v0.7.5 features (still present)
 
 **Provider-agnostic Computer Use. App guides. Cleaner architecture.**
 
@@ -74,9 +86,9 @@
 - **Clipboard fallback** — catches a11y bridge failure, falls back to typeText
 - **Install verification** — `scripts/verify-install.js` checks Node version + native deps with platform-specific fix guidance
 
-### v0.6.3 vs v0.7.5
+### v0.6.3 vs v0.7.6
 
-| | v0.6.3 | v0.7.5 |
+| | v0.6.3 | v0.7.6 |
 |---|---|---|
 | **Architecture** | 4-layer pipeline (L0-L3) | 3-stage pipeline: deterministic → text LLM → vision LLM |
 | **Transport** | REST API only | REST + MCP stdio + tools-only server |

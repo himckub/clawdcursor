@@ -2,6 +2,30 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
+## [0.7.6] - 2026-04-08 — macOS Native Host App
+
+### Added
+- **macOS Host App (ClawdCursorHost)** — new native Swift executable that runs as the app bundle's main process, owning all TCC permissions (Accessibility, Screen Recording) under a single app identity
+- **Localhost IPC server** — host app exposes `GET /health`, `GET /status`, `POST /rpc` on `127.0.0.1:3848` for CLI→host communication
+- **Token-based authentication** — `~/.clawdcursor/host-token` (mode 0600) secures the IPC channel
+- **Auto-launch/stop** — `clawdcursor start` ensures host is running; `clawdcursor stop` gracefully quits it
+- **New Swift helper methods** — `moveMouse`, `dragMouse`, `captureScreen` for smoother native macOS automation
+- **Menu bar presence** — host app shows 🐾 icon in menu bar for visibility
+
+### Security
+- **Localhost-only binding** — IPC server uses `NWParameters.requiredLocalEndpoint` to bind to `127.0.0.1` only, rejecting connections from other machines
+- **Token file permissions** — host-token created with mode 0600 (owner read/write only)
+
+### Changed
+- `src/native-helper.ts` — routes all macOS desktop operations through host IPC instead of direct stdio
+- `src/native-desktop.ts` — 11 platform-guarded code paths delegate to host on macOS
+- `src/index.ts` — start/stop commands manage host app lifecycle
+- `native/ClawdCursor.app/Contents/Info.plist` — bundle identifier changed to `com.clawdcursor.app`, executable to `ClawdCursorHost`
+
+### Unchanged
+- **Windows/Linux** — all macOS code behind `IS_MAC && this.helper` guards; no behavior changes on other platforms
+- **172 tests pass** — full test suite unchanged
+
 ## [0.6.3] - 2026-03-01 — Universal Pipeline, Multi-App Workflows, Provider-Agnostic
 
 ### Added
