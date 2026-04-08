@@ -2,6 +2,11 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
+## [0.7.8] - 2026-04-08 — Documentation Fix
+
+### Fixed
+- **Installer comments updated** — example version references now point to v0.7.8
+
 ## [0.7.7] - 2026-04-08 — Installer Fixes
 
 ### Fixed
