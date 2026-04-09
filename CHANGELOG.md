@@ -2,6 +2,18 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
+## [0.7.11] - 2026-04-09 — macOS Installer Fix
+
+### Fixed
+- **macOS installer now fails loudly if native host build fails** — was silently swallowing build errors and claiming "optional fallback" that doesn't exist
+- **Added verification step** — installer explicitly checks ClawdCursorHost binary exists before declaring success
+- **Show build output** — Swift build errors are now visible instead of redirected to /dev/null
+- **Clear error messages** — tells users exactly what went wrong and how to fix it (xcode-select --install, manual rebuild, etc.)
+
+### Changed
+- macOS native host is now correctly marked as REQUIRED, not optional
+- Installer exits with error code 1 if native build fails on macOS
+
 ## [0.7.10] - 2026-04-08 — Guided Setup Flow
 
 ### Changed
