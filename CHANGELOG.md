@@ -2,6 +2,26 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
+## [0.7.12] - 2026-04-09 — Comprehensive macOS TCC Fix
+
+### Fixed
+- **Bash pipeline bug** — `set -o pipefail` added; build failures now properly detected (was silently passing due to pipeline exit status bug)
+- **Ad-hoc signing by default** — build.sh now always signs the app (required for TCC on macOS 26+ Tahoe where unsigned binaries don't appear in privacy settings)
+- **Build error capture** — uses temp file instead of pipe to properly capture exit status
+- **TCC permission check** — runs permission-check after build to show current accessibility/screen recording status
+
+### Changed
+- **build.sh rewritten** — cleaner structure, ad-hoc signing is default (not optional), signature verification added
+- **Codesign uses --deep** — ensures all nested binaries are signed
+- **Installer shows TCC status** — tells user exactly which permissions need to be granted and where
+
+### Technical Details
+The core issue was TCC (Transparency, Consent, and Control) on macOS binds permissions to the code signing identity. Without signing:
+- On macOS 26+ (Tahoe), unsigned binaries don't appear in System Settings privacy panels at all
+- Users saw "ClawdCursorHost binary not found" errors even though install appeared to succeed
+
+Reference: mediar-ai/mcp-server-macos-use for TCC permission handling patterns.
+
 ## [0.7.11] - 2026-04-09 — macOS Installer Fix
 
 ### Fixed

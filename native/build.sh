@@ -1,5 +1,7 @@
 #!/bin/bash
 # Build script for ClawdCursor native helper (macOS only)
+# Usage: ./build.sh [--adhoc]
+#   --adhoc is now the DEFAULT behavior (required for TCC on macOS 26+)
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -18,32 +20,53 @@ APP_DIR="ClawdCursor.app/Contents/MacOS"
 mkdir -p "$APP_DIR"
 
 # Copy binaries into the bundle
-cp "$BUILD_DIR/ClawdCursorHost" "$APP_DIR/"
-cp "$BUILD_DIR/clawdcursor-helper" "$APP_DIR/"
-cp "$BUILD_DIR/screenshot-helper" "$APP_DIR/"
-cp "$BUILD_DIR/permission-check" "$APP_DIR/"
+for binary in ClawdCursorHost clawdcursor-helper screenshot-helper permission-check; do
+    if [ -f "$BUILD_DIR/$binary" ]; then
+        cp "$BUILD_DIR/$binary" "$APP_DIR/"
+        echo "   ✓ Copied $binary"
+    else
+        echo "   ⚠ Missing $binary (may be optional)"
+    fi
+done
 
 echo "✅ Built ClawdCursor.app"
 
-# Check if we should sign
+# Code signing (REQUIRED for TCC on macOS 26+ / Tahoe)
+# Without signing, the app won't appear in System Settings privacy panels
 if [[ -n "$CLAWDCURSOR_SIGN_IDENTITY" ]]; then
-    echo "🔐 Signing with identity: $CLAWDCURSOR_SIGN_IDENTITY"
+    echo "🔐 Signing with Developer ID: $CLAWDCURSOR_SIGN_IDENTITY"
     codesign --sign "$CLAWDCURSOR_SIGN_IDENTITY" \
         --options runtime \
         --entitlements entitlements.plist \
         --force \
+        --deep \
         "ClawdCursor.app"
-    echo "✅ Signed ClawdCursor.app"
-elif [[ "$1" == "--adhoc" ]]; then
-    echo "🔐 Ad-hoc signing..."
-    codesign --sign - \
-        --options runtime \
-        --entitlements entitlements.plist \
-        --force \
-        "ClawdCursor.app"
-    echo "✅ Ad-hoc signed ClawdCursor.app"
+    echo "✅ Signed with Developer ID"
 else
-    echo "⚠️  Not signed. Set CLAWDCURSOR_SIGN_IDENTITY or use --adhoc"
+    # Ad-hoc sign by default — CRITICAL for TCC to recognize the app
+    echo "🔐 Ad-hoc signing (required for TCC permissions)..."
+    if [ -f "entitlements.plist" ]; then
+        codesign --sign - \
+            --options runtime \
+            --entitlements entitlements.plist \
+            --force \
+            --deep \
+            "ClawdCursor.app"
+    else
+        codesign --sign - \
+            --force \
+            --deep \
+            "ClawdCursor.app"
+    fi
+    echo "✅ Ad-hoc signed"
+fi
+
+# Verify signature
+if codesign -v "ClawdCursor.app" 2>/dev/null; then
+    echo "✅ Signature verified"
+else
+    echo "⚠️  Signature verification failed — TCC permissions may not work"
+    echo "   On macOS 26+ (Tahoe), unsigned binaries don't appear in privacy settings"
 fi
 
 echo ""
@@ -52,5 +75,5 @@ echo ""
 echo "To test permissions:"
 echo "  ./ClawdCursor.app/Contents/MacOS/permission-check"
 echo ""
-echo "To run the helper:"
+echo "To launch:"
 echo "  open ClawdCursor.app"

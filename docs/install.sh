@@ -1,9 +1,10 @@
 #!/bin/bash
 # Clawd Cursor Installer for macOS / Linux
 # Usage: curl -fsSL https://clawdcursor.com/install.sh | bash
-# Specify version: VERSION=v0.7.11 curl -fsSL https://clawdcursor.com/install.sh | bash
+# Specify version: VERSION=v0.7.12 curl -fsSL https://clawdcursor.com/install.sh | bash
 
 set -e
+set -o pipefail  # Capture failures in pipelines (critical for build error detection)
 
 VERSION="${VERSION:-main}"
 INSTALL_DIR="$HOME/clawdcursor"
@@ -72,7 +73,10 @@ npm run build 2>/dev/null
 # ── 5b. Build native macOS host app (REQUIRED on macOS) ──────────────────────
 if [ "$(uname)" = "Darwin" ]; then
     NATIVE_HOST="$INSTALL_DIR/native/ClawdCursor.app/Contents/MacOS/ClawdCursorHost"
+    PERM_CHECK="$INSTALL_DIR/native/ClawdCursor.app/Contents/MacOS/permission-check"
+    BUILD_LOG="/tmp/clawdcursor-build-$$.log"
     
+    # Check Swift is available
     if ! command -v swift &>/dev/null; then
         echo ""
         echo "  ❌ Swift not found — REQUIRED for macOS"
@@ -87,33 +91,76 @@ if [ "$(uname)" = "Darwin" ]; then
     echo "  🔨 Building macOS native host app..."
     cd "$INSTALL_DIR/native"
     
-    # Show build output so errors are visible
-    if ./build.sh 2>&1 | while read line; do echo "     $line"; done; then
-        # Verify the binary actually exists
-        if [ -f "$NATIVE_HOST" ]; then
-            echo "  ✅ Native host app built"
-        else
-            echo ""
-            echo "  ❌ Build appeared to succeed but ClawdCursorHost binary not found"
-            echo "     Expected: $NATIVE_HOST"
-            echo ""
-            echo "     Try building manually:"
-            echo "       cd $INSTALL_DIR/native && ./build.sh"
-            exit 1
-        fi
-    else
+    # Build with ad-hoc signing (CRITICAL for TCC on macOS 26+)
+    # Use temp file to capture exit status properly (bash pipeline bug workaround)
+    set +e  # Don't exit on error, we'll handle it
+    ./build.sh --adhoc > "$BUILD_LOG" 2>&1
+    BUILD_EXIT=$?
+    set -e
+    
+    # Show build output (indented)
+    if [ -f "$BUILD_LOG" ]; then
+        while IFS= read -r line; do echo "     $line"; done < "$BUILD_LOG"
+        rm -f "$BUILD_LOG"
+    fi
+    
+    # Check build exit status
+    if [ $BUILD_EXIT -ne 0 ]; then
         echo ""
-        echo "  ❌ Native host app build FAILED"
+        echo "  ❌ Native host app build FAILED (exit code $BUILD_EXIT)"
         echo ""
         echo "     This is REQUIRED for macOS. Common fixes:"
         echo "       • Install Xcode Command Line Tools: xcode-select --install"
-        echo "       • Update Swift: softwareupdate --install -a"
+        echo "       • Update macOS/Xcode: softwareupdate --install -a"
         echo "       • Check build errors above"
         echo ""
         echo "     Manual build:"
-        echo "       cd $INSTALL_DIR/native && ./build.sh"
+        echo "       cd $INSTALL_DIR/native && ./build.sh --adhoc"
         exit 1
     fi
+    
+    # Verify binaries exist
+    if [ ! -f "$NATIVE_HOST" ]; then
+        echo ""
+        echo "  ❌ Build succeeded but ClawdCursorHost binary not found"
+        echo "     Expected: $NATIVE_HOST"
+        echo ""
+        echo "     Try rebuilding manually:"
+        echo "       cd $INSTALL_DIR/native && ./build.sh --adhoc"
+        exit 1
+    fi
+    
+    # Verify code signing (critical for TCC)
+    if ! codesign -v "$INSTALL_DIR/native/ClawdCursor.app" 2>/dev/null; then
+        echo ""
+        echo "  ⚠️  App not code signed — TCC permissions may not work"
+        echo "     Attempting ad-hoc signing..."
+        if codesign --sign - --force "$INSTALL_DIR/native/ClawdCursor.app" 2>/dev/null; then
+            echo "  ✅ Ad-hoc signed successfully"
+        else
+            echo "  ⚠️  Signing failed — you may need to grant permissions manually"
+        fi
+    fi
+    
+    # Quick TCC check (non-blocking, just informational)
+    if [ -f "$PERM_CHECK" ]; then
+        echo "  🔍 Checking TCC permissions..."
+        PERM_OUT=$("$PERM_CHECK" 2>/dev/null || true)
+        if echo "$PERM_OUT" | grep -q '"accessibility":true'; then
+            echo "     ✅ Accessibility: granted"
+        else
+            echo "     ⚠️  Accessibility: not yet granted"
+            echo "        → System Settings → Privacy & Security → Accessibility → enable ClawdCursor"
+        fi
+        if echo "$PERM_OUT" | grep -q '"screenRecording":true'; then
+            echo "     ✅ Screen Recording: granted"
+        else
+            echo "     ⚠️  Screen Recording: not yet granted"
+            echo "        → System Settings → Privacy & Security → Screen & System Audio Recording → enable ClawdCursor"
+        fi
+    fi
+    
+    echo "  ✅ Native host app built and signed"
     cd "$INSTALL_DIR"
 fi
 
