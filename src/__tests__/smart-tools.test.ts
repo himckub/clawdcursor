@@ -259,7 +259,8 @@ describe('Smart Tools', () => {
       const ctx = createCtx();
       const result = await smartType.handler({ text: 'Hello world' }, ctx);
       expect(mockWriteClipboard).toHaveBeenCalledWith('Hello world');
-      expect(mockKeyPress).toHaveBeenCalledWith('ctrl+v');
+      const expectedPasteKey = process.platform === 'darwin' ? 'cmd+v' : 'ctrl+v';
+      expect(mockKeyPress).toHaveBeenCalledWith(expectedPasteKey);
       expect(result.text).toContain('11 chars');
     });
 
