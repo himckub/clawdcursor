@@ -27,13 +27,13 @@
 
 ## What's New in v0.7.14
 
-- **macOS keystrokes fixed** — `keyPress()` now routes through `osascript` + System Events. TCC was silently blocking `CGEvent.post()` from Node child processes. Cmd+V, Cmd+N, Shift+Cmd+D all work.
-- **Platform-aware shortcuts** — `Cmd` on macOS, `Ctrl` on Windows/Linux throughout the pipeline (URL bar, email compose, Find & Replace).
-- **macOS Mail.app flow** — deterministic compose: Cmd+N → To → Tab → Subject → Tab → Body → Cmd+Shift+D.
-- **Unified permission checking** — `doctor`, `status`, and `readiness` all use the same path. No more contradictory reports.
-- **Screenshot CPU fix** — delegates to `screenshot-helper` subprocess. Eliminates ReplayKit CPU spin on macOS 14+.
-- **`clawdcursor grant`** — triggers macOS system permission dialogs from the CLI.
-- **Node.js v25 crash fix** — `EINVAL`/`setTypeOfService` from undici caught and suppressed.
+- **macOS keystrokes fixed**: `keyPress()` now routes through `osascript` + System Events. TCC was silently blocking `CGEvent.post()` from Node child processes. Cmd+V, Cmd+N, Shift+Cmd+D all work.
+- **Platform-aware shortcuts**: `Cmd` on macOS, `Ctrl` on Windows/Linux throughout the pipeline (URL bar, email compose, Find & Replace).
+- **macOS Mail.app flow**: deterministic compose: Cmd+N, To, Tab, Subject, Tab, Body, Cmd+Shift+D.
+- **Unified permission checking**: `doctor`, `status`, and `readiness` all use the same path. No more contradictory reports.
+- **Screenshot CPU fix**: delegates to `screenshot-helper` subprocess. Eliminates ReplayKit CPU spin on macOS 14+.
+- **`clawdcursor grant`**: triggers macOS system permission dialogs from the CLI.
+- **Node.js v25 crash fix**: `EINVAL`/`setTypeOfService` from undici caught and suppressed.
 
 Full history in [CHANGELOG.md](CHANGELOG.md).
 
@@ -41,7 +41,7 @@ Full history in [CHANGELOG.md](CHANGELOG.md).
 
 ## What It Does
 
-Clawd Cursor is a **tool server**. It wraps your desktop as 42 callable tools — mouse, keyboard, screen, windows, browser. Any AI that can call functions can use it.
+Clawd Cursor is a **tool server**. It wraps your desktop as 42 callable tools: mouse, keyboard, screen, windows, browser. Any AI that can call functions can use it.
 
 ```
 Your AI → "Click the Send button"  →  find_element + mouse_click
@@ -90,7 +90,7 @@ clawdcursor start                       # free with Ollama
 Three modes. Same 42 tools.
 
 ### 1. Built-in Agent (`start`)
-Full autonomous agent — send a task, get a result.
+Full autonomous agent. Send a task, get a result.
 ```bash
 clawdcursor start
 curl http://localhost:3847/task -d '{"task": "Open Notepad and write Hello"}'
@@ -215,9 +215,9 @@ Options:
 ## Prerequisites
 
 - **Node.js 20+**
-- **macOS**: Xcode CLI tools — `xcode-select --install`
+- **macOS**: Xcode CLI tools: `xcode-select --install`
 - **Linux**: `sudo apt install tesseract-ocr`
-- **AI key**: optional — works offline with Ollama
+- **AI key**: optional, works offline with Ollama
 
 ## Tech Stack
 

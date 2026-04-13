@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Clawd Cursor v0.7.14 · The Glove for Any AI Hand</title>
-  <meta name="description" content="Clawd Cursor v0.7.14 — full macOS keyboard automation, platform-aware pipeline. 42 tools, 3 transport modes, MCP support. Works with any AI.">
-  <meta property="og:title" content="Clawd Cursor v0.7.14 · The Glove for Any AI Hand">
-  <meta property="og:description" content="42 desktop control tools. Full macOS support. REST, MCP stdio, or direct agent. Works with any AI model.">
+  <title>Clawd Cursor v0.7.14</title>
+  <meta name="description" content="Clawd Cursor v0.7.14: 42 desktop tools, 3 transport modes, MCP support. Works with any AI.">
+  <meta property="og:title" content="Clawd Cursor v0.7.14">
+  <meta property="og:description" content="42 desktop tools. REST, MCP, or CLI agent. Any AI model.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://clawdcursor.com/v0.7.14">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -15,54 +15,21 @@
 
   <!--
     AGENT-READABLE SUMMARY
-    ======================
-    clawdcursor v0.7.14 — OS-level desktop automation tool server.
+    clawdcursor v0.7.14: desktop automation tool server
 
-    Install (Windows):  powershell -c "irm https://clawdcursor.com/install.ps1 | iex"
-    Install (macOS/Linux):  curl -fsSL https://clawdcursor.com/install.sh | bash
-    Consent:  clawdcursor consent
-    Doctor:   clawdcursor doctor         (auto-detect AI providers)
-    Start:    clawdcursor start          (AI agent + REST on localhost:3847)
-    MCP:      clawdcursor mcp            (MCP stdio server)
-    Task:     clawdcursor task "..."     (send plain-English task)
+    Install: powershell -c "irm https://clawdcursor.com/install.ps1 | iex" (Windows)
+             curl -fsSL https://clawdcursor.com/install.sh | bash (macOS/Linux)
+    Commands: consent, doctor, start, mcp, task "..."
 
-    Transport modes:
-      clawdcursor start → AI agent + REST API localhost:3847
-      clawdcursor mcp   → MCP stdio (Claude Code, Cursor, Windsurf, Zed)
-      REST /execute/{tool} → raw tool calls over HTTP
+    Transport: start (REST :3847), mcp (stdio), /execute/{tool} (HTTP)
 
-    42 Tools (Desktop, A11y, CDP, Smart, OCR, Shortcuts, Orchestration):
-      desktop_screenshot, desktop_screenshot_region, get_screen_size,
-      mouse_click, mouse_double_click, mouse_right_click, mouse_hover,
-      mouse_scroll, mouse_drag, type_text, key_press,
-      read_screen, get_windows, get_active_window, get_focused_element,
-      focus_window, find_element, read_clipboard, write_clipboard,
-      cdp_connect, cdp_page_context, cdp_read_text, cdp_click, cdp_type,
-      cdp_select_option, cdp_evaluate, cdp_wait_for_selector,
-      cdp_list_tabs, cdp_switch_tab,
-      smart_read, smart_click, smart_type, invoke_element,
-      ocr_read_screen, shortcuts_list, shortcuts_execute,
-      open_app, navigate_browser, wait, delegate_to_agent,
-      native_screenshot, native_mouse_move, native_drag
+    42 Tools: desktop_screenshot, mouse_click/double/right/hover/scroll/drag,
+      type_text, key_press, read_screen, get_windows, focus_window, find_element,
+      clipboard, cdp_*, smart_read/click/type, shortcuts_*, open_app, wait
 
-    Pipeline (3 stages, CLI agent mode only):
-      Stage 1: SnapshotBuilder — parallel OCR + A11y capture (free, local)
-      Stage 2: TextNavigator   — cheap text LLM with spatial layout + app guides
-      Stage 3: VisionFiller    — expensive vision LLM, last resort
-      L1.5 Deterministic    — hardcoded flows (email, app switch), zero LLM
-      L2   Skill Cache      — cached action patterns, zero LLM
-      L2.5 OCR Reasoner    — PRIMARY: OS OCR + text LLM per step
-      L2.5b A11y Reasoner  — fallback when OCR unavailable
-      L3   Computer Use    — vision model, last resort
-
-    Providers (13): Anthropic, OpenAI, Groq, Together, DeepSeek, Kimi, Gemini,
-      Mistral, xAI/Grok, Alibaba/Qwen, Fireworks, Cohere, Perplexity, Ollama
-    Consent required: clawdcursor consent (or --accept for non-interactive)
-    Data: ~/.clawdcursor/ — localhost only, not network-exposed.
-
-    macOS v0.7.14: Full keyboard automation via System Events. keyPress() routes
-      through osascript — TCC-safe, modifier-preserving. ClawdCursorHost owns all
-      TCC permissions. IPC on 127.0.0.1:3848. Run 'clawdcursor grant' for permissions.
+    Pipeline: SnapshotBuilder (free OCR+A11y) → TextNavigator (cheap LLM) → VisionFiller (last resort)
+    Providers (13): Anthropic, OpenAI, Groq, Together, DeepSeek, Kimi, Gemini, etc.
+    macOS: System Events keyboard, ClawdCursorHost for TCC, clawdcursor grant
   -->
 
   <style>
@@ -283,9 +250,9 @@
 
   <!-- Hero -->
   <div class="hero">
-    <div class="hero-badge"><div class="pulse"></div> v0.7.14 — Full macOS Keyboard Automation</div>
+    <div class="hero-badge"><div class="pulse"></div> v0.7.14: Full macOS Keyboard Automation</div>
     <h1>Give your AI<br><span class="gr">eyes and hands</span></h1>
-    <p>Connect any AI to your desktop. It sees your screen, moves the mouse, types, clicks — anything you can do, it can do. Works with Claude, GPT, Gemini, Llama, or any AI.</p>
+    <p>Connect any AI to your desktop. It sees your screen, moves the mouse, types, clicks. Works with any model.</p>
     <div class="hero-btns">
       <a href="https://github.com/AmrDab/clawdcursor" class="btn-p">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
@@ -307,19 +274,19 @@
   <section class="sect">
     <div class="sect-label">Use it your way</div>
     <h2>No app integrations. No API keys per service.</h2>
-    <p class="sub">If it's on your screen, your AI can use it. Gmail, Slack, Figma, Jira, native apps, legacy software — anything with a UI.</p>
+    <p class="sub">If it's on your screen, your AI can use it.</p>
     <div class="who-grid">
       <div class="who-card human">
-        <h3>🧑‍💻 Tell it what to do</h3>
-        <p>Bring an API key and just describe what you want. clawdcursor figures out the steps, executes them, and verifies they worked. You stay in plain English.</p>
+        <h3>Tell it what to do</h3>
+        <p>Describe what you want. clawdcursor executes it.</p>
         <div class="tag-row">
           <span class="tag g">clawdcursor doctor</span>
           <span class="tag g">clawdcursor start</span>
         </div>
       </div>
       <div class="who-card agent">
-        <h3>🤖 Connect your AI directly</h3>
-        <p>Already using Claude Code, Cursor, or Windsurf? Add clawdcursor and your AI gets full desktop control as a native tool — no extra setup, no extra API calls.</p>
+        <h3>Connect your AI directly</h3>
+        <p>Add clawdcursor to get desktop control as a native tool.</p>
         <div class="tag-row">
           <span class="tag b">Claude Code</span>
           <span class="tag b">Cursor</span>
@@ -334,44 +301,38 @@
   <section class="sect" id="modes">
     <div class="sect-label">Setup</div>
     <h2>Three ways to connect</h2>
-    <p class="sub">One server. Three modes. They all give your AI the same desktop access.</p>
+    <p class="sub">One server. Three modes. Same desktop access.</p>
     <div class="modes-grid">
       <div class="mode-card b">
-        <h3>Claude Code / Cursor / Windsurf</h3>
+        <h3>MCP (Claude Code / Cursor / Windsurf)</h3>
         <ol>
-          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor consent</code> once</li>
-          <li>Add to your AI client's config (one JSON block)</li>
-          <li>Desktop tools appear natively in your AI</li>
-          <li>No extra API key, no extra setup</li>
-          <li>Your AI decides what to do — clawdcursor does it</li>
+          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor consent</code></li>
+          <li>Add JSON block to your AI client's config</li>
+          <li>Desktop tools appear natively</li>
         </ol>
         <div class="mode-stats">
-          <div><div class="mode-stat-val">42</div><div class="mode-stat-lbl">Tools available</div></div>
+          <div><div class="mode-stat-val">42</div><div class="mode-stat-lbl">Tools</div></div>
           <div><div class="mode-stat-val">$0</div><div class="mode-stat-lbl">Extra cost</div></div>
         </div>
       </div>
       <div class="mode-card c">
-        <h3>Give it a task directly</h3>
+        <h3>CLI Agent</h3>
         <ol>
-          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor doctor</code> to set up your AI</li>
+          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor doctor</code></li>
           <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor start</code></li>
-          <li>Type what you want in plain English</li>
-          <li>clawdcursor figures out the steps and executes</li>
-          <li>Works with 13+ providers: Anthropic, OpenAI, Gemini, Groq, Ollama, and more</li>
+          <li>Type tasks in plain English</li>
         </ol>
         <div class="mode-stats">
-          <div><div class="mode-stat-val">8</div><div class="mode-stat-lbl">Pipeline layers</div></div>
+          <div><div class="mode-stat-val">13+</div><div class="mode-stat-lbl">Providers</div></div>
           <div><div class="mode-stat-val">$0</div><div class="mode-stat-lbl">Simple tasks</div></div>
         </div>
       </div>
       <div class="mode-card a">
-        <h3>Build with it</h3>
+        <h3>REST API</h3>
         <ol>
           <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor start</code></li>
-          <li>42 tools available over HTTP on localhost (smart tools included)</li>
+          <li>42 tools on localhost:3847</li>
           <li>OpenAI function-calling format</li>
-          <li>Call individual tools or send full tasks</li>
-          <li>Browse all schemas at <code style="font-size:0.75rem;color:var(--accent2)">GET /tools</code></li>
         </ol>
         <div class="mode-stats">
           <div><div class="mode-stat-val">:3847</div><div class="mode-stat-lbl">Localhost</div></div>
@@ -384,79 +345,79 @@
   <!-- Pipeline -->
   <section class="sect" id="pipeline">
     <div class="sect-label">3-Stage Pipeline</div>
-    <h2>Text first. Vision last. Any model.</h2>
-    <p class="sub">Every task flows through the cheapest path that can handle it. The pre-processor classifies intent, the router handles mechanical actions for free, and the AI stages only fire when reasoning is needed. Provider-agnostic — works with Claude, GPT, Gemini, Kimi, Llama, or any OpenAI-compatible model.</p>
+    <h2>Text first. Vision last.</h2>
+    <p class="sub">Tasks flow through the cheapest path. Works with any OpenAI-compatible model.</p>
 
     <div class="feat-grid" style="grid-template-columns: repeat(3, 1fr);">
       <div class="feat-card" style="border-left: 3px solid #22c55e;">
         <div class="feat-icon">⚡</div>
-        <h4>Stage 1 · SnapshotBuilder</h4>
-        <p style="color: #22c55e; font-size: 0.75rem; margin-bottom: 6px;">FREE — no LLM cost</p>
-        <p>Parallel OCR + accessibility tree capture in one pass. Produces a unified perception object with every text element, button, input field, and their exact screen coordinates. Also runs <strong>spatial layout analysis</strong> — detecting toolbar zones, content area center, sidebars, and status bar from element clustering. The LLM gets a text-based map of the screen without needing vision.</p>
+        <h4>Stage 1: SnapshotBuilder</h4>
+        <p style="color: #22c55e; font-size: 0.75rem; margin-bottom: 6px;">FREE</p>
+        <p>Parallel OCR + accessibility capture. Produces text elements, buttons, inputs with coordinates. Spatial layout analysis detects zones. No vision needed.</p>
       </div>
       <div class="feat-card" style="border-left: 3px solid #3b82f6;">
         <div class="feat-icon">🧠</div>
-        <h4>Stage 2 · TextNavigator ★</h4>
-        <p style="color: #3b82f6; font-size: 0.75rem; margin-bottom: 6px;">CHEAP — any text model ($0.25/1M tokens with Haiku)</p>
-        <p>Primary reasoning stage. A cheap text LLM reads the OCR snapshot, spatial layout, and app-specific guide, then decides the next action: click, type, drag, key press, scroll, or done. One action per LLM call, verified by re-scanning. Handles 90% of tasks without ever taking a screenshot.</p>
+        <h4>Stage 2: TextNavigator</h4>
+        <p style="color: #3b82f6; font-size: 0.75rem; margin-bottom: 6px;">CHEAP ($0.25/1M with Haiku)</p>
+        <p>Primary stage. Text LLM reads OCR snapshot and app guide, decides action. One action per call, verified by re-scan. Handles 90% of tasks.</p>
       </div>
       <div class="feat-card" style="border-left: 3px solid #ef4444;">
         <div class="feat-icon">🎯</div>
-        <h4>Stage 3 · VisionFiller</h4>
-        <p style="color: #ef4444; font-size: 0.75rem; margin-bottom: 6px;">EXPENSIVE — vision model, last resort only</p>
-        <p>Fires only when Stage 2 can't handle it (CAPTCHAs, complex spatial tasks, visual content). Takes screenshots, sends to a vision LLM, executes tool calls. Supports Anthropic native Computer Use and any OpenAI-compatible vision model (GPT-4o, Gemini, Kimi k2.5).</p>
+        <h4>Stage 3: VisionFiller</h4>
+        <p style="color: #ef4444; font-size: 0.75rem; margin-bottom: 6px;">EXPENSIVE, last resort</p>
+        <p>Fires for CAPTCHAs, complex spatial tasks. Supports Anthropic Computer Use and any vision model.</p>
       </div>
     </div>
 
     <div class="feat-grid" style="grid-template-columns: repeat(2, 1fr); margin-top: 16px;">
       <div class="feat-card">
         <div class="feat-icon">🔍</div>
-        <h4>Pre-processor + Task Classifier</h4>
-        <p>Before the pipeline runs: a regex parser decomposes compound tasks ("type X, then save as Y" → 2 subtasks). A zero-cost classifier categorizes each subtask — <strong>mechanical</strong> (router handles it for free), <strong>navigation</strong> (Ctrl+L + URL), <strong>reasoning</strong> (Stage 2), or <strong>spatial</strong> (needs vision). No LLM wasted on tasks a regex can route.</p>
+        <h4>Pre-processor</h4>
+        <p>Regex decomposes compound tasks. Zero-cost classifier routes: mechanical (free), navigation (Ctrl+L), reasoning (Stage 2), spatial (vision).</p>
       </div>
       <div class="feat-card">
         <div class="feat-icon">🗺️</div>
-        <h4>Textual Scaffolding (Spatial Layout Analysis)</h4>
-        <p>ClawdCursor's breakthrough: instead of sending screenshots, it analyzes WHERE elements are clustered on screen and builds a text-based spatial map. The LLM reads: <code style="font-size:0.8em">Content area: center = (1920, 1200) — CLICK HERE</code>. This lets any text model — even a 7B parameter local model — know exactly where to click in Google Docs, Excel, Paint, or any app. No vision required.</p>
+        <h4>Spatial Layout Analysis</h4>
+        <p>Builds text-based spatial map from element clustering. Any text model knows where to click, no screenshots needed.</p>
       </div>
     </div>
   </section>
 
   <!-- Features -->
   <section class="sect">
-    <div class="sect-label">What Makes It Different</div>
-    <h2>Provider-agnostic. Community-driven. Universal.</h2>
-    <p class="sub">v0.7.14 is fully provider-agnostic — no hardcoded model names, no provider-specific hacks. Full macOS keyboard automation via System Events. 13 providers auto-detected. App knowledge crowdsourced. Display-agnostic across any resolution and DPI.</p>
+    <div class="sect-label">Features</div>
+    <h2>Provider-agnostic. Universal.</h2>
+    <p class="sub">13 providers, any resolution, crowdsourced app knowledge.</p>
     <div class="feat-grid">
       <div class="feat-card">
         <div class="feat-icon">🍎</div>
-        <h4>Full macOS Support (v0.7.14)</h4>
-        <p>Keyboard automation via <code style="font-size:0.82em">osascript</code> + System Events — TCC-safe, modifier-preserving (Cmd+V, Cmd+N, Shift+Cmd+D all work). ClawdCursorHost native app owns TCC permissions. Run <code style="font-size:0.82em">clawdcursor grant</code> to trigger system permission dialogs. Unified permission reporting across doctor/status/readiness. Screenshots via <code style="font-size:0.82em">screenshot-helper</code> (no ReplayKit CPU spin).</p>
+        <h4>macOS Support</h4>
+        <p>Keyboard via System Events, TCC-safe. <code style="font-size:0.82em">clawdcursor grant</code> triggers permission dialogs.</p>
       </div>
       <div class="feat-card">
         <div class="feat-icon">📖</div>
-        <h4>App Guides — 86+ apps</h4>
-        <p>Community-contributed JSON instruction manuals. Keyboard shortcuts, workflows, UI layout hints, and tips. Excel (116 shortcuts), Paint, Notepad, Outlook, Spotify, Discord, Figma, and more. Install with <code style="font-size:0.82em">clawdcursor guides install excel</code>. Loaded automatically when the app is detected.</p>
+        <h4>App Guides (86+ apps)</h4>
+        <p>Community JSON guides with shortcuts and tips. <code style="font-size:0.82em">clawdcursor guides install excel</code></p>
       </div>
       <div class="feat-card">
         <div class="feat-icon">🖱️</div>
-        <h4>Smart Tools (Blind Agent)</h4>
-        <p>Click buttons by name, type into fields by label, read screen text — all without screenshots. <code style="font-size:0.82em">smart_click</code>, <code style="font-size:0.82em">smart_type</code>, <code style="font-size:0.82em">smart_read</code> use accessibility + OCR fallback automatically.</p>
+        <h4>Smart Tools</h4>
+        <p>Click by name, type by label, read text. No screenshots. Accessibility + OCR fallback.</p>
       </div>
       <div class="feat-card">
         <div class="feat-icon">⌨️</div>
         <h4>Shortcuts Engine</h4>
-        <p>Built-in keyboard shortcut database. <code style="font-size:0.82em">shortcuts_list</code> discovers available shortcuts for any app. <code style="font-size:0.82em">shortcuts_execute</code> fires them instantly. Zero LLM cost.</p>
+        <p><code style="font-size:0.82em">shortcuts_list</code> and <code style="font-size:0.82em">shortcuts_execute</code>. Zero LLM cost.</p>
       </div>
       <div class="feat-card">
         <div class="feat-icon">✅</div>
-        <h4>Ground-Truth Verifier</h4>
-        <p>Re-scans the screen after every action. Done verification checks if task keywords appear. Drawing tasks get lenient verification. The agent can't hallucinate success.</p>
+        <h4>Verifier</h4>
+        <p>Re-scans after every action. Can't hallucinate success.</p>
       </div>
       <div class="feat-card">
         <div class="feat-icon">🌍</div>
-        <h4>Truly Universal</h4>
-        <p>13 providers auto-detected. Display-agnostic (720p to 5K, any DPI). Cross-platform (Windows, macOS, Linux). Provider-agnostic — zero hardcoded model names. Community-driven app knowledge. If a human can do it on screen, clawdcursor can too.</p>
+        <h4>Universal</h4>
+        <p>13 providers. 720p to 5K. Windows, macOS, Linux.</p>
       </div>
     </div>
   </section>
@@ -464,8 +425,8 @@
   <!-- Install -->
   <section id="install" class="sect">
     <div class="sect-label">Get Started</div>
-    <h2>Two commands. That's it.</h2>
-    <p class="sub">Install, start. Providers are auto-detected on first run.</p>
+    <h2>Two commands.</h2>
+    <p class="sub">Install, start. Providers auto-detected.</p>
 
     <div class="os-tabs">
       <button class="os-tab active" onclick="switchOS('windows')">Windows</button>
@@ -475,35 +436,24 @@
 
     <div class="code-box" id="os-windows" style="display:block;">
       <div class="code-hd"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span>PowerShell</span></div>
-      <pre><code><span class="c-comment"># Install</span>
-<span class="c-cmd">powershell -c</span> <span class="c-string">"irm https://clawdcursor.com/install.ps1 | iex"</span>
-
-<span class="c-comment"># Start (auto-detects your AI providers on first run)</span>
+      <pre><code><span class="c-cmd">powershell -c</span> <span class="c-string">"irm https://clawdcursor.com/install.ps1 | iex"</span>
 <span class="c-cmd">clawdcursor start</span></code></pre>
     </div>
 
     <div class="code-box" id="os-macos" style="display:none;">
-      <div class="code-hd"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span>Terminal (zsh)</span></div>
-      <pre><code><span class="c-comment"># Grant Accessibility: System Settings → Privacy → Accessibility → add ClawdCursor</span>
-<span class="c-comment"># Grant Screen Recording: System Settings → Privacy → Screen & System Audio Recording → add ClawdCursor</span>
-
-<span class="c-comment"># Install (builds ClawdCursorHost native app automatically)</span>
-<span class="c-cmd">curl -fsSL</span> <span class="c-string">https://clawdcursor.com/install.sh</span> <span class="c-cmd">| bash</span>
-
-<span class="c-comment"># Start (auto-detects your AI providers on first run)</span>
+      <div class="code-hd"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span>Terminal</span></div>
+      <pre><code><span class="c-cmd">curl -fsSL</span> <span class="c-string">https://clawdcursor.com/install.sh</span> <span class="c-cmd">| bash</span>
+<span class="c-cmd">clawdcursor grant</span>  <span class="c-comment"># triggers permission dialogs</span>
 <span class="c-cmd">clawdcursor start</span></code></pre>
     </div>
 
     <div class="code-box" id="os-linux" style="display:none;">
-      <div class="code-hd"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span>Terminal (bash)</span></div>
-      <pre><code><span class="c-comment"># Install</span>
-<span class="c-cmd">curl -fsSL</span> <span class="c-string">https://clawdcursor.com/install.sh</span> <span class="c-cmd">| bash</span>
-
-<span class="c-comment"># Start (auto-detects your AI providers on first run)</span>
+      <div class="code-hd"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span>Terminal</span></div>
+      <pre><code><span class="c-cmd">curl -fsSL</span> <span class="c-string">https://clawdcursor.com/install.sh</span> <span class="c-cmd">| bash</span>
 <span class="c-cmd">clawdcursor start</span></code></pre>
     </div>
 
-    <p style="color:var(--text3);font-size:0.78rem;margin-top:10px;">Requires Node.js 20+. Consent is one-time and stored in <code style="color:var(--text2)">~/.clawdcursor/consent</code>. Server binds to localhost only.</p>
+    <p style="color:var(--text3);font-size:0.78rem;margin-top:10px;">Node.js 20+. Localhost only.</p>
   </section>
 
 </div>
@@ -512,7 +462,7 @@
 <div class="wrap">
   <div class="cta">
     <h2>Give your AI a body.</h2>
-    <p>Open source. Any model. Any client. Your desktop, controlled.</p>
+    <p>Open source. Any model. Your desktop.</p>
     <a href="https://github.com/AmrDab/clawdcursor" class="btn-p">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
       Star on GitHub
