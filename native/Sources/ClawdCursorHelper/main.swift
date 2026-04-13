@@ -109,7 +109,8 @@ class ClawdCursorHelper {
 
     /// Map a character to its macOS virtual keycode (US ANSI layout).
     /// Covers a-z, 0-9, and common symbols — enough for all keyboard shortcuts.
-    static func keycodeForCharacter(_ scalar: Unicode.Scalar) -> CGKeyCode {
+    /// Returns nil if the character has no known keycode mapping.
+    static func keycodeForCharacter(_ scalar: Unicode.Scalar) -> CGKeyCode? {
         let c = Character(scalar).lowercased()
         let map: [String: CGKeyCode] = [
             "a": 0x00, "s": 0x01, "d": 0x02, "f": 0x03, "h": 0x04, "g": 0x05,
@@ -122,7 +123,7 @@ class ClawdCursorHelper {
             "/": 0x2C, "n": 0x2D, "m": 0x2E, ".": 0x2F, "`": 0x32,
             "+": 0x18, "*": 0x43,  // + maps to = key, * maps to numpad multiply
         ]
-        return map[c] ?? 0x09 // fallback to 'v' keycode as safe default
+        return map[c]
     }
 
     private let encoder: JSONEncoder = {
@@ -444,7 +445,10 @@ class ClawdCursorHelper {
             // CRITICAL: modifiers must NOT be discarded — cmd+v, cmd+n, shift+cmd+d all depend on this.
             if key.count == 1, let scalar = key.unicodeScalars.first {
                 // Try common ASCII keycode mapping first (covers a-z, 0-9, symbols)
-                keyCode = Self.keycodeForCharacter(scalar)
+                guard let kc = Self.keycodeForCharacter(scalar) else {
+                    return JsonRpcResponse(id: id, result: nil, error: JsonRpcError(code: -32602, message: "Unsupported key character: \(key) (not in ANSI keycode map)"))
+                }
+                keyCode = kc
             } else {
                 return JsonRpcResponse(id: id, result: nil, error: JsonRpcError(code: -32602, message: "Unknown key: \(key)"))
             }
