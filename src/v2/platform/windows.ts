@@ -1,0 +1,620 @@
+/**
+ * Windows PlatformAdapter — all Windows-specific code lives here.
+ *
+ * Strategy:
+ *   - Mouse + keyboard: nut-js directly (no TCC blocking as on macOS)
+ *   - Screenshot: nut-js screen.grab() — no special helper binary
+ *   - Screen size + DPI: System.Windows.Forms.Screen via PowerShell for logical px,
+ *                        compared with nut-js physical px to derive dpiRatio
+ *   - Windows + A11y: persistent PSRunner (../../ps-runner.ts) driving UI Automation
+ *   - Clipboard: Get-Clipboard / Set-Clipboard via PowerShell
+ *   - App launch: Start-Process via PowerShell
+ *
+ * Permissions: Windows has no TCC-style gate — returns all-true.
+ */
+
+import { execFile, spawn } from 'child_process';
+import { promisify } from 'util';
+import sharp from 'sharp';
+import {
+  mouse,
+  keyboard,
+  screen,
+  Point,
+  Button,
+  Key,
+} from '@nut-tree-fork/nut-js';
+
+import { psRunner } from '../../ps-runner';
+import type {
+  PlatformAdapter,
+  ScreenSize,
+  ScreenshotResult,
+  WindowInfo,
+  UiElement,
+  PermissionStatus,
+  PortableKeyCombo,
+} from './types';
+
+const execFileAsync = promisify(execFile);
+
+// Tunables
+const PS_TIMEOUT_MS = 8_000;
+const CLIPBOARD_TIMEOUT_MS = 3_000;
+
+export class WindowsAdapter implements PlatformAdapter {
+  readonly platform = 'win32' as const;
+
+  private screenSize: ScreenSize | null = null;
+
+  async init(): Promise<void> {
+    // Configure nut-js for snappy input; same tuning as native-desktop.ts.
+    mouse.config.mouseSpeed = 2000;
+    mouse.config.autoDelayMs = 0;
+    keyboard.config.autoDelayMs = 0;
+
+    // Kick off the PowerShell bridge so the ~800ms UIA assembly load happens
+    // in the background. Errors surface on first real a11y call.
+    psRunner.start().catch(() => { /* non-fatal — retried on first use */ });
+
+    // Pre-warm screen size so the first capture / first click isn't paying for it.
+    await this.getScreenSize().catch(() => null);
+  }
+
+  async shutdown(): Promise<void> {
+    try { psRunner.stop(); } catch { /* */ }
+  }
+
+  // ─── PERMISSIONS ──────────────────────────────────────────────────
+
+  async checkPermissions(): Promise<PermissionStatus> {
+    // Windows doesn't gate any of these behind TCC-style prompts. If the
+    // user can run the binary at all, they can do input / capture / a11y.
+    return { input: true, accessibility: true, screenRecording: true };
+  }
+
+  async requestPermissions(): Promise<PermissionStatus> {
+    return this.checkPermissions();
+  }
+
+  // ─── DISPLAY ──────────────────────────────────────────────────────
+
+  async getScreenSize(): Promise<ScreenSize> {
+    if (this.screenSize) return this.screenSize;
+
+    // nut-js screen.grab() returns PHYSICAL pixels on Windows.
+    let physicalWidth = 0, physicalHeight = 0;
+    try {
+      const img = await screen.grab();
+      physicalWidth = img.width;
+      physicalHeight = img.height;
+      (img as any).data = null;
+    } catch { /* fall through with zeros */ }
+
+    // System.Windows.Forms.Screen returns LOGICAL (DPI-scaled) pixels on Win —
+    // that's the coordinate space nut-js mouse API expects.
+    let logicalWidth = physicalWidth;
+    let logicalHeight = physicalHeight;
+    try {
+      const { stdout } = await execFileAsync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-Command',
+          'Add-Type -AssemblyName System.Windows.Forms; ' +
+          '$s=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; ' +
+          '"$($s.Width),$($s.Height)"',
+        ],
+        { timeout: PS_TIMEOUT_MS },
+      );
+      const [w, h] = stdout.trim().split(',').map(s => parseInt(s, 10));
+      if (w > 0 && h > 0) {
+        logicalWidth = w;
+        logicalHeight = h;
+      }
+    } catch { /* non-fatal — fall back to physical */ }
+
+    if (!physicalWidth) physicalWidth = logicalWidth;
+    if (!physicalHeight) physicalHeight = logicalHeight;
+
+    const dpiRatio = physicalWidth > logicalWidth ? physicalWidth / logicalWidth : 1;
+
+    this.screenSize = {
+      physicalWidth,
+      physicalHeight,
+      logicalWidth,
+      logicalHeight,
+      dpiRatio,
+    };
+    return this.screenSize;
+  }
+
+  async screenshot(opts?: { maxWidth?: number }): Promise<ScreenshotResult> {
+    const img = await screen.grab();
+    const srcWidth = img.width;
+    const srcHeight = img.height;
+
+    let pipeline = sharp(img.data as Buffer, {
+      raw: { width: srcWidth, height: srcHeight, channels: 4 },
+    });
+
+    let width = srcWidth;
+    let height = srcHeight;
+    let scaleFactor = 1;
+
+    if (opts?.maxWidth && srcWidth > opts.maxWidth) {
+      scaleFactor = srcWidth / opts.maxWidth;
+      const newH = Math.round(srcHeight / scaleFactor);
+      pipeline = pipeline.resize(opts.maxWidth, newH, { fit: 'fill', kernel: 'lanczos3' });
+      width = opts.maxWidth;
+      height = newH;
+    }
+
+    const buffer = await pipeline.png().toBuffer();
+    (img as any).data = null;
+
+    return { buffer, width, height, scaleFactor };
+  }
+
+  async screenshotRegion(x: number, y: number, w: number, h: number): Promise<ScreenshotResult> {
+    const img = await screen.grab();
+    const rx = Math.max(0, Math.min(x, img.width - 1));
+    const ry = Math.max(0, Math.min(y, img.height - 1));
+    const rw = Math.min(w, img.width - rx);
+    const rh = Math.min(h, img.height - ry);
+
+    const buffer = await sharp(img.data as Buffer, {
+      raw: { width: img.width, height: img.height, channels: 4 },
+    })
+      .extract({ left: rx, top: ry, width: rw, height: rh })
+      .png()
+      .toBuffer();
+    (img as any).data = null;
+
+    return { buffer, width: rw, height: rh, scaleFactor: 1 };
+  }
+
+  // ─── WINDOWS ──────────────────────────────────────────────────────
+
+  async listWindows(): Promise<WindowInfo[]> {
+    try {
+      const result = await psRunner.run({ cmd: 'get-screen-context', maxDepth: 0 }) as any;
+      const raw = Array.isArray(result?.windows) ? result.windows : [];
+      return raw.map(this.normalizeWindow);
+    } catch {
+      return [];
+    }
+  }
+
+  async getActiveWindow(): Promise<WindowInfo | null> {
+    try {
+      const fg = await psRunner.run({ cmd: 'get-foreground-window' }) as any;
+      if (!fg || fg.success === false) return null;
+
+      // Try to find the same window in the full list so we get bounds/minimized.
+      const all = await this.listWindows();
+      const match = all.find(w => w.processId === fg.processId);
+      if (match) return match;
+
+      return this.normalizeWindow({
+        title: fg.title ?? '',
+        processName: fg.processName ?? '',
+        processId: fg.processId ?? 0,
+        handle: fg.handle,
+        bounds: { x: 0, y: 0, width: 0, height: 0 },
+        isMinimized: false,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  async focusWindow(query: { processName?: string; processId?: number; title?: string }): Promise<boolean> {
+    // The PSRunner focus-window command takes title and/or processId. Look up by
+    // processName first so callers can pass just that.
+    let processId = query.processId;
+    let title = query.title;
+
+    if (processId === undefined && query.processName) {
+      const target = query.processName.toLowerCase();
+      const windows = await this.listWindows();
+      const hit = windows.find(w => w.processName.toLowerCase() === target)
+        ?? windows.find(w => w.processName.toLowerCase().includes(target));
+      if (hit) processId = hit.processId;
+    }
+
+    try {
+      const result = await psRunner.run({
+        cmd: 'focus-window',
+        restore: true,
+        ...(title !== undefined ? { title } : {}),
+        ...(processId !== undefined ? { processId } : {}),
+      }) as any;
+      return result?.success === true;
+    } catch {
+      return false;
+    }
+  }
+
+  async maximizeWindow(): Promise<void> {
+    // Win+Up is the portable Windows maximize shortcut.
+    await this.keyPress('super+up').catch(() => { /* non-fatal */ });
+  }
+
+  // ─── ACCESSIBILITY ────────────────────────────────────────────────
+
+  async getUiTree(processId?: number): Promise<UiElement[]> {
+    try {
+      const result = await psRunner.run({
+        cmd: 'get-screen-context',
+        maxDepth: 8,
+        ...(processId !== undefined ? { focusedProcessId: processId } : {}),
+      }) as any;
+      const tree = result?.uiTree;
+      if (!tree) return [];
+      const nodes = Array.isArray(tree) ? tree : [tree];
+      const flat: UiElement[] = [];
+      for (const n of nodes) this.flattenTree(n, flat);
+      return flat;
+    } catch {
+      return [];
+    }
+  }
+
+  async findElements(query: { name?: string; controlType?: string; processId?: number }): Promise<UiElement[]> {
+    try {
+      const result = await psRunner.run({
+        cmd: 'find-element',
+        ...(query.name !== undefined ? { name: query.name } : {}),
+        ...(query.controlType !== undefined ? { controlType: query.controlType } : {}),
+        ...(query.processId !== undefined ? { processId: query.processId } : {}),
+      }) as any;
+      const raw = Array.isArray(result) ? result : [];
+      return raw.map(this.normalizeElement);
+    } catch {
+      return [];
+    }
+  }
+
+  async getFocusedElement(): Promise<UiElement | null> {
+    try {
+      const result = await psRunner.run({ cmd: 'get-focused-element' }) as any;
+      if (!result || result.success === false) return null;
+      return this.normalizeElement(result);
+    } catch {
+      return null;
+    }
+  }
+
+  async invokeElement(query: {
+    name?: string;
+    controlType?: string;
+    processId?: number;
+    action?: 'click' | 'focus' | 'set-value';
+    value?: string;
+  }): Promise<{ success: boolean; bounds?: { x: number; y: number; width: number; height: number } }> {
+    // The underlying PS bridge requires a processId for invoke-element — when the
+    // caller omits it, resolve via find-element first (same pattern as AccessibilityBridge).
+    let processId = query.processId;
+    if (processId === undefined && query.name) {
+      const candidates = await this.findElements({
+        name: query.name,
+        controlType: query.controlType,
+      });
+      if (candidates.length === 0) return { success: false };
+      processId = (candidates[0] as any).processId
+        ?? (candidates[0] as any).pid;
+      // If still no pid but we have bounds, caller can fall back to a coord click.
+      if (processId === undefined) {
+        return {
+          success: false,
+          bounds: candidates[0].bounds,
+        };
+      }
+    }
+
+    if (processId === undefined) return { success: false };
+
+    try {
+      const result = await psRunner.run({
+        cmd: 'invoke-element',
+        processId,
+        action: query.action ?? 'click',
+        ...(query.name !== undefined ? { name: query.name } : {}),
+        ...(query.controlType !== undefined ? { controlType: query.controlType } : {}),
+        ...(query.value !== undefined ? { value: query.value } : {}),
+      }) as any;
+      return {
+        success: result?.success === true,
+        bounds: result?.bounds,
+      };
+    } catch {
+      return { success: false };
+    }
+  }
+
+  // ─── INPUT (mouse) ────────────────────────────────────────────────
+  // All coords are LOGICAL pixels — nut-js mouse API lives in that space on Win.
+
+  async mouseClick(x: number, y: number, opts?: { button?: 'left' | 'right'; count?: number }): Promise<void> {
+    await mouse.setPosition(new Point(x, y));
+    await this.delay(40);
+    const count = opts?.count ?? 1;
+    for (let i = 0; i < count; i++) {
+      if (opts?.button === 'right') await mouse.rightClick();
+      else await mouse.click(Button.LEFT);
+      if (i < count - 1) await this.delay(60);
+    }
+  }
+
+  async mouseMove(x: number, y: number): Promise<void> {
+    await mouse.setPosition(new Point(x, y));
+  }
+
+  async mouseDrag(x1: number, y1: number, x2: number, y2: number): Promise<void> {
+    await mouse.setPosition(new Point(x1, y1));
+    await this.delay(50);
+    await mouse.pressButton(Button.LEFT);
+    await this.delay(80);
+    const steps = Math.max(8, Math.floor(Math.hypot(x2 - x1, y2 - y1) / 18));
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      await mouse.setPosition(new Point(
+        Math.round(x1 + (x2 - x1) * t),
+        Math.round(y1 + (y2 - y1) * t),
+      ));
+      await this.delay(10);
+    }
+    await mouse.releaseButton(Button.LEFT);
+  }
+
+  async mouseScroll(x: number, y: number, direction: 'up' | 'down', amount: number = 3): Promise<void> {
+    await mouse.setPosition(new Point(x, y));
+    await this.delay(30);
+    if (direction === 'down') await mouse.scrollDown(amount);
+    else await mouse.scrollUp(amount);
+  }
+
+  // ─── INPUT (keyboard) ─────────────────────────────────────────────
+
+  async typeText(text: string): Promise<void> {
+    if (!text) return;
+    await keyboard.type(text);
+  }
+
+  async keyPress(combo: PortableKeyCombo): Promise<void> {
+    if (!combo) return;
+
+    // Literal "+" — can't split on "+" since it IS the separator.
+    if (combo === '+') {
+      await keyboard.type('+');
+      return;
+    }
+
+    const parts = combo.split('+').map(s => s.trim()).filter(Boolean);
+    if (parts.length === 0) return;
+
+    // Convert "mod" → "ctrl" on Windows, leave the rest of the combo alone.
+    const normalized = parts.map(p => {
+      const l = p.toLowerCase();
+      if (l === 'mod' || l === 'cmd' || l === 'command' || l === 'meta') return 'ctrl';
+      return p;
+    });
+
+    // Map every part to a nut-js Key enum value, or 'TYPE_CHAR' for printable chars
+    // like '*', '+', '.' that have no direct enum entry.
+    const mapped: Array<Key | 'TYPE_CHAR'> = normalized.map(p => this.mapKey(p));
+
+    // Single-key: either type it as a character or press+release the mapped key.
+    if (mapped.length === 1) {
+      if (mapped[0] === 'TYPE_CHAR') {
+        await keyboard.type(normalized[0]);
+      } else {
+        await keyboard.pressKey(mapped[0] as Key);
+        await this.delay(30);
+        await keyboard.releaseKey(mapped[0] as Key);
+      }
+      return;
+    }
+
+    // Combo: press each modifier (or type the printable char), then release in reverse.
+    for (let i = 0; i < mapped.length; i++) {
+      const k = mapped[i];
+      if (k === 'TYPE_CHAR') {
+        await keyboard.type(normalized[i]);
+      } else {
+        await keyboard.pressKey(k as Key);
+      }
+      await this.delay(30);
+    }
+    for (let i = mapped.length - 1; i >= 0; i--) {
+      const k = mapped[i];
+      if (k !== 'TYPE_CHAR') {
+        await keyboard.releaseKey(k as Key);
+      }
+      await this.delay(30);
+    }
+  }
+
+  // ─── CLIPBOARD ────────────────────────────────────────────────────
+
+  async readClipboard(): Promise<string> {
+    try {
+      const { stdout } = await execFileAsync(
+        'powershell.exe',
+        ['-NoProfile', '-Command', 'Get-Clipboard'],
+        { timeout: CLIPBOARD_TIMEOUT_MS },
+      );
+      // Get-Clipboard tacks on a trailing CRLF — trim for consistency with macOS.
+      return stdout?.replace(/\r?\n$/, '') ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  async writeClipboard(text: string): Promise<void> {
+    // Pack the command as UTF-16LE base64 so arbitrary characters (quotes,
+    // newlines, non-ASCII) survive without any escaping dance.
+    const utf16 = Buffer.from(
+      `Set-Clipboard -Value '${text.replace(/'/g, "''")}'`,
+      'utf16le',
+    );
+    try {
+      await execFileAsync(
+        'powershell.exe',
+        ['-NoProfile', '-EncodedCommand', utf16.toString('base64')],
+        { timeout: CLIPBOARD_TIMEOUT_MS },
+      );
+    } catch {
+      // Silent — clipboard is best-effort (same contract as macOS adapter).
+    }
+  }
+
+  // ─── APPS ─────────────────────────────────────────────────────────
+
+  async openApp(name: string): Promise<{ pid?: number; title?: string }> {
+    // Best-effort launch via Start-Process. "name" may be an exe ("notepad"), a
+    // file path, a URL, or a shell verb — Start-Process handles them all.
+    try {
+      // Fire and forget — don't wait for the app to exit. detached + unref so
+      // our process doesn't linger on the child.
+      const child = spawn(
+        'powershell.exe',
+        ['-NoProfile', '-Command', `Start-Process -FilePath "${name.replace(/"/g, '""')}"`],
+        { stdio: 'ignore', detached: true, windowsHide: true },
+      );
+      child.unref();
+    } catch {
+      // Fall through to the lookup — the app may already be running.
+    }
+
+    // Give the process a moment to appear in the window list, then try to find it.
+    await this.delay(800);
+    try {
+      const windows = await this.listWindows();
+      const target = name.toLowerCase();
+      const win = windows.find(w => w.processName.toLowerCase() === target)
+        ?? windows.find(w => w.processName.toLowerCase().includes(target))
+        ?? windows.find(w => w.title.toLowerCase().includes(target));
+      return win ? { pid: win.processId, title: win.title } : {};
+    } catch {
+      return {};
+    }
+  }
+
+  // ─── INTERNAL HELPERS ─────────────────────────────────────────────
+
+  private normalizeWindow = (raw: any): WindowInfo => ({
+    title: raw?.title ?? '',
+    processName: raw?.processName ?? '',
+    processId: raw?.processId ?? 0,
+    bounds: raw?.bounds ?? { x: 0, y: 0, width: 0, height: 0 },
+    isMinimized: raw?.isMinimized ?? false,
+    handle: raw?.handle ?? raw?.processId,
+  });
+
+  private normalizeElement = (raw: any): UiElement => ({
+    name: raw?.name ?? '',
+    controlType: (raw?.controlType ?? '').replace(/^ControlType\./, ''),
+    bounds: raw?.bounds ?? { x: 0, y: 0, width: 0, height: 0 },
+    value: raw?.value,
+    enabled: raw?.isEnabled,
+    focused: raw?.focused,
+  });
+
+  /**
+   * Flatten the UIA tree into a single list, matching the macOS adapter's
+   * contract. Drops purely structural unnamed nodes to keep the list useful.
+   */
+  private flattenTree(node: any, acc: UiElement[]): void {
+    if (!node) return;
+    // ConvertTo-UINode may return an array of children when it skipped an
+    // unnamed container — just recurse through those.
+    if (Array.isArray(node)) {
+      for (const n of node) this.flattenTree(n, acc);
+      return;
+    }
+    if (node.controlType || node.name) acc.push(this.normalizeElement(node));
+    if (Array.isArray(node.children)) {
+      for (const child of node.children) this.flattenTree(child, acc);
+    }
+  }
+
+  /**
+   * Map a portable key token to the nut-js Key enum (or 'TYPE_CHAR' for
+   * printable ASCII symbols that don't have a direct enum entry).
+   */
+  private mapKey(name: string): Key | 'TYPE_CHAR' {
+    const direct = WIN_KEY_MAP[name] ?? WIN_KEY_MAP[name.toLowerCase()];
+    if (direct !== undefined) return direct;
+
+    if (name.length === 1) {
+      const ch = name;
+      const upper = ch.toUpperCase();
+      // A-Z
+      if (upper >= 'A' && upper <= 'Z') {
+        const k = (Key as any)[upper];
+        if (k !== undefined) return k as Key;
+      }
+      // 0-9 → nut-js uses Num1..Num9, Num0 for the top-row digits.
+      if (upper >= '0' && upper <= '9') {
+        const k = (Key as any)[`Num${upper}`];
+        if (k !== undefined) return k as Key;
+      }
+      // Any other printable ASCII — ask keyboard.type() to handle it.
+      if (ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) <= 126) return 'TYPE_CHAR';
+    }
+
+    // Last resort: direct enum name match (e.g. "F13", "NumPad5").
+    const enumVal = (Key as any)[name];
+    if (enumVal !== undefined) return enumVal as Key;
+
+    throw new Error(`Unknown key: "${name}"`);
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(r => setTimeout(r, ms));
+  }
+}
+
+// Portable-token → nut-js Key lookup. Lowercase keys are checked as a
+// fallback so "Return"/"return", "Shift"/"shift", etc. all resolve.
+const WIN_KEY_MAP: Record<string, Key> = {
+  // Modifiers
+  ctrl: Key.LeftControl, control: Key.LeftControl, Control: Key.LeftControl,
+  shift: Key.LeftShift, Shift: Key.LeftShift,
+  alt: Key.LeftAlt, Alt: Key.LeftAlt, option: Key.LeftAlt, opt: Key.LeftAlt,
+  super: Key.LeftSuper, Super: Key.LeftSuper, win: Key.LeftSuper, windows: Key.LeftSuper, meta: Key.LeftSuper,
+
+  // Navigation / editing
+  return: Key.Enter, Return: Key.Enter, enter: Key.Enter, Enter: Key.Enter,
+  tab: Key.Tab, Tab: Key.Tab,
+  escape: Key.Escape, Escape: Key.Escape, esc: Key.Escape, Esc: Key.Escape,
+  backspace: Key.Backspace, Backspace: Key.Backspace,
+  delete: Key.Delete, Delete: Key.Delete, forwarddelete: Key.Delete,
+  space: Key.Space, Space: Key.Space,
+  home: Key.Home, Home: Key.Home,
+  end: Key.End, End: Key.End,
+  pageup: Key.PageUp, PageUp: Key.PageUp,
+  pagedown: Key.PageDown, PageDown: Key.PageDown,
+  insert: Key.Insert, Insert: Key.Insert,
+
+  // Arrows
+  left: Key.Left, Left: Key.Left,
+  right: Key.Right, Right: Key.Right,
+  up: Key.Up, Up: Key.Up,
+  down: Key.Down, Down: Key.Down,
+
+  // F-keys
+  f1: Key.F1, F1: Key.F1, f2: Key.F2, F2: Key.F2, f3: Key.F3, F3: Key.F3,
+  f4: Key.F4, F4: Key.F4, f5: Key.F5, F5: Key.F5, f6: Key.F6, F6: Key.F6,
+  f7: Key.F7, F7: Key.F7, f8: Key.F8, F8: Key.F8, f9: Key.F9, F9: Key.F9,
+  f10: Key.F10, F10: Key.F10, f11: Key.F11, F11: Key.F11, f12: Key.F12, F12: Key.F12,
+
+  // Symbol keys reachable as single chars in combos like "ctrl++" / "ctrl+-"
+  '=': Key.Equal,
+  '+': Key.Equal,
+  '-': Key.Minus,
+  '_': Key.Minus,
+  '`': Key.Grave,
+};

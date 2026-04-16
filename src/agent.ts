@@ -92,6 +92,14 @@ export class Agent {
   };
   private aborted = false;
   private taskExecutionLocked = false;
+  /** v2 architecture: vision-first agent + ground truth verifier (set via --v2 flag) */
+  private useV2 = false;
+  private pipelineV2: import('./v2/orchestrator').PipelineV2 | null = null;
+
+  /** Enable the v2 pipeline (vision-first agent + ground truth verifier). */
+  enableV2(): void {
+    this.useV2 = true;
+  }
 
   constructor(config: ClawdConfig) {
     this.config = config;
@@ -411,6 +419,9 @@ public class WinAPI {
     });
 
     try {
+      if (this.useV2) {
+        return await Promise.race([this._executeTaskV2(task, startTime), timeoutPromise]);
+      }
       return await Promise.race([this._executeTaskInternal(task, startTime), timeoutPromise]);
     } finally {
       // Always clear the 10-minute timer so it doesn't keep the process alive
@@ -418,6 +429,69 @@ public class WinAPI {
       if (timeoutHandle !== null) clearTimeout(timeoutHandle);
       this.taskExecutionLocked = false;
     }
+  }
+
+  /**
+   * V2 pipeline: simplified Router → VisionAgent → Verifier flow.
+   * Lazy-loaded so v1 users don't pay the import cost.
+   */
+  private async _executeTaskV2(task: string, startTime: number): Promise<TaskResult> {
+    if (!this.pipelineV2) {
+      const { PipelineV2 } = await import('./v2/orchestrator');
+      const pipelineConfig = loadPipelineConfig();
+      if (!pipelineConfig) {
+        return {
+          success: false,
+          steps: [{ action: 'error', description: 'V2 pipeline requires a configured AI provider (run `clawdcursor doctor`)', success: false, timestamp: Date.now() }],
+          duration: Date.now() - startTime,
+        };
+      }
+      this.pipelineV2 = new PipelineV2(pipelineConfig);
+    }
+
+    console.log(`\n🐾 [v2] Starting task: ${task}`);
+    this.state = { ...this.state, status: 'thinking', currentTask: task, stepsCompleted: 0, stepsTotal: 0 };
+
+    const result = await this.pipelineV2.run({
+      task,
+      isAborted: () => this.aborted,
+    });
+
+    // Map PipelineRunResult → TaskResult.
+    const steps: StepResult[] = (result.agentSteps ?? []).map((s, i) => ({
+      action: s.toolName,
+      description: s.toolResult.text,
+      success: s.toolResult.success,
+      timestamp: Date.now(),
+      layer: 'unified' as const,
+      method: s.toolName,
+      latencyMs: s.durationMs,
+    }));
+
+    if (steps.length === 0) {
+      // Router-only success/fail — synthesize a single step.
+      steps.push({
+        action: result.success ? 'done' : 'error',
+        description: result.reason,
+        success: result.success,
+        timestamp: Date.now(),
+        layer: result.layer === 'router' ? 'router' : 'unified',
+      });
+    }
+
+    if (result.verifyResult) {
+      console.log(`\n🔍 [verifier] ${result.verifyResult.pass ? '✅' : '❌'} ${result.verifyResult.reason}`);
+      for (const sig of result.verifyResult.signals) {
+        console.log(`   ${sig.value ? '✓' : '✗'} ${sig.name}: ${sig.detail}`);
+      }
+    }
+
+    this.state.status = 'idle';
+    return {
+      success: result.success,
+      steps,
+      duration: Date.now() - startTime,
+    };
   }
 
   private async _executeTaskInternal(task: string, startTime: number): Promise<TaskResult> {

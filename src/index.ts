@@ -173,6 +173,7 @@ program
   .option('--api-key <key>', 'AI provider API key')
   .option('--debug', 'Save screenshots to debug/ folder (off by default)')
   .option('--accept', 'Accept desktop control consent non-interactively and start')
+  .option('--v2', 'Use the v2 architecture (vision-first agent + ground truth verifier, no legacy layers)')
   .action(async (opts) => {
     // Single-instance guard
     const existingPid = claimPidFile('start');
@@ -260,6 +261,10 @@ program
 
     // ── Agent ──────────────────────────────────────────────────────────────
     const agent = new Agent(config);
+    if (opts.v2) {
+      agent.enableV2();
+      console.log(`${e('🚀', '[v2]')} Using v2 architecture (vision-first agent + ground truth verifier)`);
+    }
 
     try {
       await agent.connect();
