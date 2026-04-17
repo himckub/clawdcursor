@@ -96,9 +96,18 @@ export class Agent {
   private useV2 = false;
   private pipelineV2: import('./v2/orchestrator').PipelineV2 | null = null;
 
+  /** Unified blind-first pipeline (set via --blind-first / OPENCLAW_PIPELINE=unified). */
+  private useBlindFirst = false;
+  private pipelineUnified: import('./pipeline').Pipeline | null = null;
+
   /** Enable the v2 pipeline (vision-first agent + ground truth verifier). */
   enableV2(): void {
     this.useV2 = true;
+  }
+
+  /** Enable the unified blind-first pipeline (v0.8.1 default once stable). */
+  enableBlindFirst(): void {
+    this.useBlindFirst = true;
   }
 
   constructor(config: ClawdConfig) {
@@ -419,6 +428,9 @@ public class WinAPI {
     });
 
     try {
+      if (this.useBlindFirst) {
+        return await Promise.race([this._executeTaskUnified(task, startTime), timeoutPromise]);
+      }
       if (this.useV2) {
         return await Promise.race([this._executeTaskV2(task, startTime), timeoutPromise]);
       }
@@ -485,6 +497,108 @@ public class WinAPI {
         console.log(`   ${sig.value ? '✓' : '✗'} ${sig.name}: ${sig.detail}`);
       }
     }
+
+    this.state.status = 'idle';
+    return {
+      success: result.success,
+      steps,
+      duration: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * v0.8.1 unified blind-first pipeline.
+   *
+   * Routes through: classify → router → skill-cache → knowledge → sense →
+   * text-agent (no screenshots) → vision-fallback → verifier.
+   *
+   * Lazy-loaded so legacy/V2 users don't pay the import cost.
+   */
+  private async _executeTaskUnified(task: string, startTime: number): Promise<TaskResult> {
+    if (!this.pipelineUnified) {
+      const { Pipeline } = await import('./pipeline');
+      const { getPlatform } = await import('./v2/platform');
+      const adapter = await getPlatform();
+      const pipelineConfig = loadPipelineConfig();
+
+      const hasTextModel   = !!(pipelineConfig?.layer2.model && pipelineConfig.layer2.baseUrl);
+      const hasVisionModel = !!(pipelineConfig?.layer3?.model && pipelineConfig.layer3?.baseUrl);
+
+      // Haiku-unavailable graceful degradation: pipeline runs without LLM
+      // slots if none configured. Router + playbooks + skill-cache still
+      // work; reasoning tasks return a structured "run doctor" error.
+      this.pipelineUnified = new Pipeline({
+        adapter,
+        llm: {
+          text: hasTextModel && pipelineConfig
+            ? async ({ system, user, maxTokens }) =>
+                callTextLLM(pipelineConfig, {
+                  system,
+                  user,
+                  maxTokens: maxTokens ?? 256,
+                  timeoutMs: 30_000,
+                  retries: 0,
+                })
+            : undefined,
+          decomposer: hasTextModel && pipelineConfig
+            ? async ({ system, user, maxTokens }) =>
+                callTextLLM(pipelineConfig, {
+                  system,
+                  user,
+                  maxTokens: maxTokens ?? 400,
+                  timeoutMs: 20_000,
+                  retries: 0,
+                })
+            : undefined,
+          // vision + retry slots wired in follow-up commit; Pipeline
+          // returns structured "no vision model" error when hit without them.
+          vision: undefined,
+          retry: undefined,
+        },
+        retry: {
+          useFallback: process.env.OPENCLAW_RETRY_USE_FALLBACK === '1',
+          maxPerSession: 5,
+        },
+        disableVision: process.env.OPENCLAW_DISABLE_VISION === '1',
+      });
+
+      if (!hasTextModel) {
+        console.log('⚡ No text model configured — blind-first pipeline will only handle router/playbook tasks.');
+        console.log('   Run `clawdcursor doctor` to configure an AI provider (any OpenAI-compatible endpoint).');
+      } else {
+        const visionStatus = hasVisionModel ? `(vision: ${pipelineConfig.layer3!.model})` : '(no vision fallback)';
+        console.log(`🧠 Blind-first pipeline: text=${pipelineConfig.layer2.model} ${visionStatus}`);
+      }
+    }
+
+    console.log(`\n🐾 [blind-first] Starting task: ${task}`);
+    this.state = { ...this.state, status: 'thinking', currentTask: task, stepsCompleted: 0, stepsTotal: 0 };
+
+    const result = await this.pipelineUnified.run({
+      task,
+      isAborted: () => this.aborted,
+    });
+
+    const steps: StepResult[] = result.trace.length > 0
+      ? result.trace.map(t => ({
+          action: (t.action as any).type ?? 'unknown',
+          description: t.result.text,
+          success: t.result.success,
+          timestamp: Date.now(),
+          layer: result.path === 'text-agent' ? 'ocr' as const : 'unified' as const,
+          method: (t.action as any).type,
+          latencyMs: t.durationMs,
+        }))
+      : [{
+          action: result.success ? 'done' : 'error',
+          description: result.text,
+          success: result.success,
+          timestamp: Date.now(),
+          layer: result.path === 'router' ? 'router' as const : 'unified' as const,
+        }];
+
+    console.log(`\n🏁 [blind-first] ${result.success ? '✅' : '❌'} path=${result.path} cost=$${result.costUsd.toFixed(4)} (${result.durationMs}ms)`);
+    console.log(`   ${result.text}`);
 
     this.state.status = 'idle';
     return {
