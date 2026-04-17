@@ -33,11 +33,31 @@ export interface PipelineDeps {
       [k: string]: unknown;
     }>;
   };
-  /** Whether to enable the retry-tier-up path on verifier reject. */
+  /**
+   * Retry-tier-up on verifier reject.
+   *
+   * **Default OFF in v0.8.1** to avoid the "$0.15 retry × unreliable verifier ×
+   * many sessions" cost landmine. Telemetry via the cost-meter will let us see
+   * verifier-reject rates across the user base; when that rate settles below
+   * ~5% across canonical tasks, the default can flip to ON in a subsequent
+   * release. Until then, users opt in via `--retry` / `OPENCLAW_RETRY_USE_FALLBACK=1`.
+   *
+   * `maxPerSession` is a hard cap the pipeline enforces regardless — even
+   * opted-in users can't blow a session's budget on retries alone.
+   */
   retry?: { useFallback: boolean; maxPerSession: number };
   /** Whether to disable the vision-agent entirely (a11y-only security mode). */
   disableVision?: boolean;
 }
+
+/**
+ * Default dependency config for the Pipeline. Explicit zero-retry default
+ * matches the v0.8.1 cost-safety stance documented in the plan §4.4.
+ */
+export const PIPELINE_DEFAULTS: Required<Pick<PipelineDeps, 'retry' | 'disableVision'>> = {
+  retry: { useFallback: false, maxPerSession: 5 },
+  disableVision: false,
+};
 
 export interface PipelineRunInput {
   task: string;
