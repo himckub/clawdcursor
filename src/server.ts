@@ -59,11 +59,28 @@ export function initServerToken(): string {
   return SERVER_TOKEN;
 }
 
+/** Constant-time token compare (v0.8.1). Replaces the v0.8.0 `!==` which
+ *  short-circuits on first mismatch and leaks byte-level timing to any
+ *  attacker who can measure localhost response latency. */
+function timingSafeTokenEqual(received: string, expected: string): boolean {
+  if (!received || !expected) return false;
+  const a = Buffer.from(received, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  if (a.length !== b.length) {
+    // Compare against self to keep timing stable when lengths differ.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('crypto').timingSafeEqual(a, a);
+    return false;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require('crypto').timingSafeEqual(a, b);
+}
+
 /** Middleware: require Authorization: Bearer <token> on mutating endpoints. */
 export function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction): void {
   const authHeader = req.headers['authorization'] || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  if (!token || token !== SERVER_TOKEN) {
+  if (!timingSafeTokenEqual(token, SERVER_TOKEN)) {
     res.status(401).json({ error: 'Unauthorized — include Authorization: Bearer <token> header. Token is at ~/.clawdcursor/token' });
     return;
   }
