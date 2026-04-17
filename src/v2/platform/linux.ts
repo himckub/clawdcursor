@@ -488,19 +488,34 @@ export class LinuxAdapter implements PlatformAdapter {
   // ─── APPS ─────────────────────────────────────────────────────────
 
   async openApp(name: string): Promise<{ pid?: number; title?: string }> {
+    return this.launchApp(name);
+  }
+
+  async launchApp(
+    name: string,
+    opts?: { alwaysNewInstance?: boolean; url?: string; cwd?: string },
+  ): Promise<{ pid?: number; title?: string; handle?: number | string }> {
+    if (/[\r\n\t\x00-\x1f]/.test(name)) {
+      throw new Error('launchApp: illegal characters in app name');
+    }
+    const settleMs = opts?.alwaysNewInstance ? 1200 : 800;
+
     // 1) Try the bare executable name directly (detached so it survives us).
-    const direct = await this.spawnDetached(name, []);
+    const directArgs: string[] = [];
+    if (opts?.url) directArgs.push(opts.url);
+    const direct = await this.spawnDetached(name, directArgs, opts?.cwd);
     if (direct.ok) {
-      await this.delay(800);
+      await this.delay(settleMs);
       const match = await this.findSpawnedWindow(name, direct.pid);
       return match ?? { pid: direct.pid };
     }
 
     // 2) Fallback to xdg-open (handles desktop-file names, URLs, file paths).
+    const target = opts?.url ?? name;
     if (await this.hasBinary('xdg-open')) {
-      const fallback = await this.spawnDetached('xdg-open', [name]);
+      const fallback = await this.spawnDetached('xdg-open', [target], opts?.cwd);
       if (fallback.ok) {
-        await this.delay(800);
+        await this.delay(settleMs);
         const match = await this.findSpawnedWindow(name);
         return match ?? {};
       }
@@ -522,10 +537,10 @@ export class LinuxAdapter implements PlatformAdapter {
     return byName ? { pid: byName.processId, title: byName.title } : null;
   }
 
-  private spawnDetached(cmd: string, args: string[]): Promise<{ ok: boolean; pid?: number }> {
+  private spawnDetached(cmd: string, args: string[], cwd?: string): Promise<{ ok: boolean; pid?: number }> {
     return new Promise((resolve) => {
       try {
-        const proc = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+        const proc = spawn(cmd, args, { detached: true, stdio: 'ignore', cwd });
         let settled = false;
 
         // "error" fires synchronously-ish for ENOENT.

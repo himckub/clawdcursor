@@ -407,10 +407,27 @@ export class MacOSAdapter implements PlatformAdapter {
   // ─── APPS ─────────────────────────────────────────────────────────
 
   async openApp(name: string): Promise<{ pid?: number; title?: string }> {
+    return this.launchApp(name);
+  }
+
+  async launchApp(
+    name: string,
+    opts?: { alwaysNewInstance?: boolean; url?: string; cwd?: string },
+  ): Promise<{ pid?: number; title?: string; handle?: number | string }> {
+    // Reject shell-metachar input even though we use execFile (no shell expansion).
+    // Keeps parity with Windows' stricter validator and avoids surprising `open`.
+    if (/[\r\n\t\x00-\x1f]/.test(name)) {
+      throw new Error('launchApp: illegal characters in app name');
+    }
     try {
-      await execFileAsync('open', ['-a', name], { timeout: 5_000 });
-      // Brief settle, then lookup the window.
-      await this.delay(800);
+      const args = ['-a', name];
+      if (opts?.alwaysNewInstance) args.unshift('-n');
+      if (opts?.url) args.push(opts.url);
+      await execFileAsync('open', args, {
+        timeout: 5_000,
+        cwd: opts?.cwd,
+      });
+      await this.delay(opts?.alwaysNewInstance ? 1200 : 800);
       const win = (await this.listWindows()).find(w =>
         w.processName.toLowerCase() === name.toLowerCase() ||
         w.title.toLowerCase().includes(name.toLowerCase()),

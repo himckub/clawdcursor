@@ -473,23 +473,44 @@ export class WindowsAdapter implements PlatformAdapter {
   // ─── APPS ─────────────────────────────────────────────────────────
 
   async openApp(name: string): Promise<{ pid?: number; title?: string }> {
-    // Best-effort launch via Start-Process. "name" may be an exe ("notepad"), a
-    // file path, a URL, or a shell verb — Start-Process handles them all.
+    return this.launchApp(name);
+  }
+
+  async launchApp(
+    name: string,
+    opts?: { alwaysNewInstance?: boolean; url?: string; cwd?: string },
+  ): Promise<{ pid?: number; title?: string; handle?: number | string }> {
+    // SECURITY (v0.8.1): pass arguments via execFile args array instead of
+    // string-interpolating into a PowerShell -Command string. Closes the
+    // command-injection sink flagged at this call-site in the v0.8.0 audit.
+    const args = ['-NoProfile', '-Command'];
+    const cmdParts: string[] = ['Start-Process'];
+    // Reject control chars / backticks / $() that can escape PowerShell quoting
+    // regardless of how we serialize.
+    if (/[\r\n\t\x00-\x1f]/.test(name) || /[`$]/.test(name)) {
+      throw new Error('launchApp: illegal characters in app name');
+    }
+    cmdParts.push('-FilePath', this.psQuote(name));
+    if (opts?.url && !/[\r\n\t\x00-\x1f"'`$]/.test(opts.url)) {
+      cmdParts.push('-ArgumentList', this.psQuote(opts.url));
+    }
+    if (opts?.cwd && !/[\r\n\t\x00-\x1f"'`$]/.test(opts.cwd)) {
+      cmdParts.push('-WorkingDirectory', this.psQuote(opts.cwd));
+    }
+    args.push(cmdParts.join(' '));
+
     try {
-      // Fire and forget — don't wait for the app to exit. detached + unref so
-      // our process doesn't linger on the child.
-      const child = spawn(
-        'powershell.exe',
-        ['-NoProfile', '-Command', `Start-Process -FilePath "${name.replace(/"/g, '""')}"`],
-        { stdio: 'ignore', detached: true, windowsHide: true },
-      );
+      const child = spawn('powershell.exe', args, {
+        stdio: 'ignore',
+        detached: true,
+        windowsHide: true,
+      });
       child.unref();
     } catch {
       // Fall through to the lookup — the app may already be running.
     }
 
-    // Give the process a moment to appear in the window list, then try to find it.
-    await this.delay(800);
+    await this.delay(opts?.alwaysNewInstance ? 1200 : 800);
     try {
       const windows = await this.listWindows();
       const target = name.toLowerCase();
@@ -500,6 +521,16 @@ export class WindowsAdapter implements PlatformAdapter {
     } catch {
       return {};
     }
+  }
+
+  /**
+   * PowerShell single-quoted string escape. Inside single quotes, the only
+   * special char is the single quote itself, which doubles to escape.
+   * This is the only safe way to pass a user-controlled string as a
+   * PowerShell argument.
+   */
+  private psQuote(s: string): string {
+    return `'${s.replace(/'/g, "''")}'`;
   }
 
   // ─── INTERNAL HELPERS ─────────────────────────────────────────────

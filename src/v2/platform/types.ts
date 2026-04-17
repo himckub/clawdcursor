@@ -126,6 +126,25 @@ export interface PlatformAdapter {
   // ─── APPS ───────────────────────────────────────────────────────
   /** Open an application by user-friendly name (e.g. "Safari", "notepad"). */
   openApp(name: string): Promise<{ pid?: number; title?: string }>;
+
+  /**
+   * Extended app launch (v0.8.1).
+   *
+   * Unlike {@link openApp}, this returns richer metadata (hwnd on Windows when
+   * available) and accepts launch options: `alwaysNewInstance` forces a fresh
+   * process (for apps like mspaint where the user may already have an instance
+   * running and want a separate window); `url` launches a browser directly at
+   * a target URL on platforms where that's a single syscall.
+   *
+   * Implementations SHOULD fall back to `openApp` behavior when their OS can't
+   * honor an option. The router port (pipeline/router) expects this method to
+   * exist for all three platforms.
+   */
+  launchApp(name: string, opts?: {
+    alwaysNewInstance?: boolean;
+    url?: string;
+    cwd?: string;
+  }): Promise<{ pid?: number; title?: string; handle?: number | string }>;
 }
 
 /**
