@@ -81,7 +81,17 @@ export function priceFor(model: string): ModelPrice {
 
 export interface CostEvent {
   model: string;
-  stage: 'classify' | 'decompose' | 'text-agent' | 'vision-agent' | 'decomposer-fallback';
+  /** Where in the pipeline this cost was incurred. Kept wide enough to cover
+   *  router-free stages (classify / decompose) and every unified-agent mode. */
+  stage:
+    | 'classify'
+    | 'decompose'
+    | 'decomposer-fallback'
+    | 'text-agent'
+    | 'vision-agent'
+    | 'blind'
+    | 'hybrid'
+    | 'vision';
   inputTokens: number;
   outputTokens: number;
 }

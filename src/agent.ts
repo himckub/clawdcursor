@@ -64,6 +64,20 @@ const MAX_STEPS = 15;
 const MAX_SIMILAR_ACTION = 3;
 const MAX_LLM_FALLBACK_STEPS = 10;
 
+/**
+ * Provider-agnostic Anthropic-endpoint detector. Anthropic native endpoints
+ * use the `/messages` API shape; everything else (OpenAI, Groq, Together,
+ * Kimi, DeepSeek, Ollama, Gemini-via-OpenAI-compat) uses `/chat/completions`.
+ * Local endpoints and Ollama always take the OpenAI-compat path even if their
+ * host happens to match an Anthropic-ish substring.
+ */
+function isAnthropicEndpoint(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false;
+  if (baseUrl.includes('localhost')) return false;
+  if (baseUrl.includes('11434')) return false; // Ollama default port
+  return baseUrl.includes('anthropic.com');
+}
+
 export class Agent {
   private desktop: NativeDesktop;
   private brain: AIBrain;
@@ -524,49 +538,42 @@ public class WinAPI {
     if (!this.pipelineUnified) {
       const { Pipeline } = await import('./pipeline');
       const { getPlatform } = await import('./v2/platform');
-      const { callVisionLLM } = await import('./llm-client');
       const adapter = await getPlatform();
       const pipelineConfig = loadPipelineConfig();
 
       const hasTextModel   = !!(pipelineConfig?.layer2.model && pipelineConfig.layer2.baseUrl);
       const hasVisionModel = !!(pipelineConfig?.layer3?.model && pipelineConfig?.layer3?.baseUrl);
 
-      // Graceful degradation: any missing slot is just... missing. Router and
-      // playbook tasks still run. Reasoning tasks hit text-agent when text
-      // is configured, vision fallback when vision is configured, and a
-      // clean structured "no model configured" result when neither is.
+      // Build direct LLM configs for the unified agent. The agent uses
+      // native tool_use (Anthropic) / tool_calls (OpenAI) via
+      // callLLMWithTools — so we pass baseUrl/model/apiKey/isAnthropic
+      // rather than wrapping callTextLLM / callVisionLLM.
+      const textConfig = hasTextModel && pipelineConfig
+        ? {
+            baseUrl: pipelineConfig.layer2.baseUrl,
+            model: pipelineConfig.layer2.model,
+            apiKey: pipelineConfig.layer2.apiKey || pipelineConfig.apiKey || '',
+            isAnthropic: isAnthropicEndpoint(pipelineConfig.layer2.baseUrl),
+            maxTokens: 1024,
+          }
+        : undefined;
+
+      const visionLayer = pipelineConfig?.layer3;
+      const visionConfig = hasVisionModel && visionLayer && pipelineConfig
+        ? {
+            baseUrl: visionLayer.baseUrl,
+            model: visionLayer.model,
+            apiKey: visionLayer.apiKey || pipelineConfig.apiKey || '',
+            isAnthropic: isAnthropicEndpoint(visionLayer.baseUrl),
+            maxTokens: 1024,
+          }
+        : undefined;
+
       this.pipelineUnified = new Pipeline({
         adapter,
         llm: {
-          text: hasTextModel && pipelineConfig
-            ? async ({ system, user, maxTokens }) =>
-                callTextLLM(pipelineConfig, {
-                  system,
-                  user,
-                  maxTokens: maxTokens ?? 256,
-                  timeoutMs: 30_000,
-                })
-            : undefined,
-          decomposer: hasTextModel && pipelineConfig
-            ? async ({ system, user, maxTokens }) =>
-                callTextLLM(pipelineConfig, {
-                  system,
-                  user,
-                  maxTokens: maxTokens ?? 400,
-                  timeoutMs: 20_000,
-                })
-            : undefined,
-          vision: hasVisionModel && pipelineConfig
-            ? async ({ system, messages, maxTokens }) =>
-                callVisionLLM(pipelineConfig, {
-                  system,
-                  messages,
-                  maxTokens: maxTokens ?? 1024,
-                  forceJson: true,
-                  timeoutMs: 30_000,
-                  retries: 1,
-                })
-            : undefined,
+          text: textConfig,
+          vision: visionConfig,
         },
         disableVision: process.env.OPENCLAW_DISABLE_VISION === '1',
       });

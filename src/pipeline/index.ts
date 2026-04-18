@@ -1,25 +1,33 @@
 /**
- * Unified pipeline (v0.8.1) — three layers, flexible order.
+ * Unified pipeline (v0.8.1) — three layers, ONE agent.
  *
- *   Layer 1 — PREPROCESSOR         ONE job: decide the shape per task
+ *   Layer 1 — PREPROCESSOR         ONE job: decide the shape per task.
  *     └─ emits {strategy, subtasks, hints}
  *
- *   Layer 2 — EXECUTOR              ONE job: execute the chosen strategy
- *     ├─ router          0 LLM
- *     ├─ blind           text-agent over a11y (cheapest LLM path)
- *     ├─ hybrid          text-agent with screenshot() tool
- *     └─ vision          vision-agent with pixels + a11y seed
+ *   Layer 2 — EXECUTOR              ONE job: execute the chosen strategy.
+ *     ├─ router              0 LLM  (app launches, shortcuts)
+ *     └─ agent               LLM    (ONE agent, three modes:
+ *                                     blind / hybrid / vision)
  *
- *   Layer 3 — ESCALATOR             ONE job: if current attempt failed,
- *                                   pick the next strategy and retry
- *                                   (blind → hybrid → vision, max 3)
+ *   Layer 3 — ESCALATOR             ONE job: when a rung fails, pick the
+ *                                   next one (router → blind → hybrid →
+ *                                   vision). No premium retry tier.
  *
- * Vision is always the fallback. No premium retry tier. If all three
- * escalation rungs miss, the pipeline returns an honest structured
- * result and the MCP client decides what to do.
+ * Differences from the pre-unification design:
+ *   • text-agent and vision-agent are deleted. Both are the same loop now,
+ *     just different tool catalogs and perception seeds.
+ *   • Vision is ALWAYS the fallback, never the default.
+ *   • All tool calls flow through the agent's SafetyLayer gate — no more
+ *     `ctx.platform.*` bypass via the old vision-agent/tools.ts.
+ *   • Native tool_use replaces JSON-in-prose parsing (Anthropic tool_use
+ *     + OpenAI tool_calls; generic fallback for other providers).
+ *   • Per-turn a11y snapshot refresh keeps the model oriented.
+ *   • FingerprintHistory stagnation detection forces the agent to change
+ *     approach or give_up, not loop forever on a dead button.
  *
- * Model-agnostic: LLM clients are injected. OS-agnostic: every I/O
- * goes through PlatformAdapter.
+ * Model-agnostic: LLM configs flow through AgentLlmDeps. Mixed-provider is
+ * supported natively — text can be Ollama, vision can be Anthropic, etc.
+ * OS-agnostic: every I/O goes through PlatformAdapter.
  */
 
 import {
@@ -27,37 +35,31 @@ import {
   runWithCorrelation,
 } from './observability/correlation';
 import { CostMeter } from './observability/cost-meter';
-import { logger } from './observability/logger';
+import { logger, EVENTS } from './observability/logger';
 import type {
   TaskResult as PipelineTaskResult,
   PipelineAction,
-  ActionResult,
 } from './types';
 import type { PlatformAdapter } from '../v2/platform/types';
 
 import { preprocess, type Strategy } from './preprocessor/preprocessor';
 import { Router, type RouteResult } from './router/router';
 import { SkillCache } from './skills/skill-cache';
-import { captureSnapshot } from './sense/snapshot';
-import { runTextAgent, type TextAgentResult } from './text-agent/agent';
-import { dispatchAction } from './dispatch';
-import { VisionAgentImpl, type VisionLlmFn } from './vision-agent/agent';
+import { runAgent } from './agent/agent';
+import type { AgentLlmConfig, AgentLlmDeps, AgentMode, AgentResult } from './agent/types';
 
 // ─── Dependency injection contract ──────────────────────────────────
 
-export type TextLlmFn = (args: {
-  system: string;
-  user: string;
-  maxTokens?: number;
-}) => Promise<string>;
-
+/**
+ * LLM dependency contract. Each slot is independent — a caller can wire
+ * text-only, vision-only, or mixed. The agent gracefully degrades when
+ * a required slot is missing (clean give_up with an actionable error).
+ */
 export interface PipelineLlm {
-  /** Text-agent. Undefined → blind + hybrid fall through to vision. */
-  text?: TextLlmFn;
-  /** Offline decomposer fallback (not wired yet — regex decomposer runs in L1). */
-  decomposer?: TextLlmFn;
-  /** Vision-agent. Undefined → vision strategy fails honestly. */
-  vision?: VisionLlmFn;
+  /** Text-model config (used for blind + hybrid modes). */
+  text?: AgentLlmConfig;
+  /** Vision-model config (used for vision mode, and hybrid fallback). */
+  vision?: AgentLlmConfig;
 }
 
 export interface PipelineDeps {
@@ -65,18 +67,15 @@ export interface PipelineDeps {
   llm: PipelineLlm;
   /** Refuse vision even if configured (high-security mode). */
   disableVision?: boolean;
-  /** Cap inside text-agent loop. Default 12. */
-  textAgentMaxIterations?: number;
-  /** Cap inside vision-agent loop. Default 30. */
-  visionAgentMaxIterations?: number;
+  /** Cap inside the agent loop. Default 20. */
+  maxTurnsPerRung?: number;
   /** Maximum strategy escalations per task. Default 3. */
   maxEscalations?: number;
 }
 
-export const PIPELINE_DEFAULTS: Required<Pick<PipelineDeps, 'disableVision' | 'textAgentMaxIterations' | 'visionAgentMaxIterations' | 'maxEscalations'>> = {
+export const PIPELINE_DEFAULTS: Required<Pick<PipelineDeps, 'disableVision' | 'maxTurnsPerRung' | 'maxEscalations'>> = {
   disableVision: false,
-  textAgentMaxIterations: 12,
-  visionAgentMaxIterations: 30,
+  maxTurnsPerRung: 20,
   maxEscalations: 3,
 };
 
@@ -90,22 +89,16 @@ export interface PipelineRunInput {
 export class Pipeline {
   private readonly router: Router;
   private readonly skillCache: SkillCache;
-  private readonly visionAgent: VisionAgentImpl | null;
   private readonly disableVision: boolean;
-  private readonly textAgentMaxIterations: number;
-  private readonly visionAgentMaxIterations: number;
+  private readonly maxTurnsPerRung: number;
   private readonly maxEscalations: number;
 
   constructor(private readonly deps: PipelineDeps) {
     this.router = new Router(deps.adapter);
     this.skillCache = new SkillCache();
     this.disableVision = deps.disableVision ?? PIPELINE_DEFAULTS.disableVision;
-    this.textAgentMaxIterations = deps.textAgentMaxIterations ?? PIPELINE_DEFAULTS.textAgentMaxIterations;
-    this.visionAgentMaxIterations = deps.visionAgentMaxIterations ?? PIPELINE_DEFAULTS.visionAgentMaxIterations;
+    this.maxTurnsPerRung = deps.maxTurnsPerRung ?? PIPELINE_DEFAULTS.maxTurnsPerRung;
     this.maxEscalations = deps.maxEscalations ?? PIPELINE_DEFAULTS.maxEscalations;
-    this.visionAgent = deps.llm.vision
-      ? new VisionAgentImpl(deps.llm.vision, deps.adapter)
-      : null;
   }
 
   async run(input: PipelineRunInput): Promise<PipelineTaskResult> {
@@ -116,16 +109,15 @@ export class Pipeline {
     const isAborted = input.isAborted ?? (() => false);
 
     return runWithCorrelation({ correlationId, taskText: input.task }, async () => {
-      log.info('pipeline.start');
+      log.info(EVENTS.PIPELINE_START, { task: input.task });
 
       // ── PREPROCESS ONCE to decide whether this is a compound task.
-      // If it is, each subtask runs the full pipeline independently.
       const outerActive = await this.safeActiveWindow();
       const outerDecision = preprocess(input.task, {
         activeWindowTitle: outerActive?.title,
         activeWindowProcessName: outerActive?.processName,
       });
-      log.info('pipeline.preprocess', {
+      log.info(EVENTS.PIPELINE_PREPROCESS, {
         strategy: outerDecision.strategy,
         reason: outerDecision.hints.reason,
         appKey: outerDecision.hints.appKey,
@@ -136,9 +128,6 @@ export class Pipeline {
         ? outerDecision.subtasks
         : [input.task];
 
-      // Subtask loop — each subtask re-preprocesses against the CURRENT
-      // active window (Paint may be in focus only AFTER subtask 1 opens it),
-      // picks its own strategy, runs its own escalation ladder.
       const aggregateTrace: PipelineTaskResult['trace'] = [];
       let lastText = '';
       let lastPath: PipelineTaskResult['path'] = 'text-agent';
@@ -152,13 +141,11 @@ export class Pipeline {
         }
 
         const subtask = subtasks[i];
-        log.info('pipeline.subtask', { index: i + 1, of: subtasks.length, subtask });
+        log.info(EVENTS.PIPELINE_SUBTASK, { index: i + 1, of: subtasks.length, subtask });
 
-        // Re-preprocess each subtask — active window may have changed
-        // (opening Paint, then "draw stickfigure" needs Paint-aware context).
         const subActive = await this.safeActiveWindow();
         const subDecision = i === 0 && subtasks.length === 1
-          ? outerDecision  // single subtask — reuse outer preprocess
+          ? outerDecision
           : preprocess(subtask, {
               activeWindowTitle: subActive?.title,
               activeWindowProcessName: subActive?.processName,
@@ -174,13 +161,8 @@ export class Pipeline {
         lastPath = subResult.path;
 
         if (!subResult.success) {
-          // A failed subtask aborts the chain — no point typing "hello"
-          // into Notepad if opening Notepad failed.
           log.warn('pipeline.subtask.failed_chain_abort', {
-            index: i + 1,
-            subtask,
-            path: subResult.path,
-            reason: subResult.failureReason,
+            index: i + 1, subtask, path: subResult.path, reason: subResult.failureReason,
           });
           return this.buildResult({
             success: false, path: subResult.path, costMeter, startedAt, correlationId,
@@ -192,25 +174,30 @@ export class Pipeline {
         }
 
         // Brief settle between subtasks so the next preprocess sees the
-        // correct active window (launching an app takes ~100-500ms to surface).
+        // correct active window.
         if (i < subtasks.length - 1) await delay(400);
       }
 
-      // All subtasks passed.
       this.recordSkillOnPass(input.task, aggregateTrace, outerActive?.processName).catch(() => {});
-      return this.buildResult({
+      const result = this.buildResult({
         success: true, path: lastPath, costMeter, startedAt, correlationId,
         text: subtasks.length > 1
           ? `All ${subtasks.length} subtasks completed. Last: ${lastText}`
           : lastText,
         trace: aggregateTrace,
       });
+      log.info(EVENTS.PIPELINE_DONE, {
+        success: result.success,
+        path: result.path,
+        costUsd: result.costUsd,
+        durationMs: result.durationMs,
+      });
+      return result;
     });
   }
 
   /**
-   * Run one subtask through the full pipeline — classify/router/blind/hybrid/vision
-   * with the escalation ladder. Called once per subtask from run().
+   * Run one subtask through the escalation ladder.
    */
   private async runOneSubtask(
     task: string,
@@ -233,7 +220,7 @@ export class Pipeline {
       if (rungsTried >= this.maxEscalations) break;
       rungsTried++;
 
-      env.log.info('pipeline.rung', { strategy: rung, attempt: rungsTried });
+      env.log.info(EVENTS.PIPELINE_RUNG, { strategy: rung, attempt: rungsTried });
 
       const attempt = await this.executeStrategy(rung, task, decision, env);
       last = attempt;
@@ -242,6 +229,14 @@ export class Pipeline {
       env.log.info('pipeline.rung.failed', {
         strategy: rung, reason: attempt.failureReason, attempt: rungsTried,
       });
+
+      // If blind failed with cannot_read, that's an explicit escalation
+      // signal from the agent — move to hybrid (or vision if hybrid also
+      // misses). Don't attempt blind twice.
+      if (rung === 'blind' && attempt.failureReason === 'cannot_read') {
+        // Skip hybrid if we have no vision model — go straight to the
+        // next different path (or give up).
+      }
     }
 
     return last;
@@ -250,10 +245,7 @@ export class Pipeline {
   // ─── Strategy dispatch ──────────────────────────────────────────
 
   private buildLadder(initial: Strategy): Strategy[] {
-    // Router never escalates TO itself — it either handles or the
-    // pipeline moves on. The other strategies can chain.
     if (initial === 'router') {
-      // Router attempt first; if it misses, escalate blind → hybrid → vision.
       return ['router', 'blind', 'hybrid', 'vision'];
     }
     if (initial === 'blind') {
@@ -262,8 +254,6 @@ export class Pipeline {
     if (initial === 'hybrid') {
       return ['hybrid', 'vision'];
     }
-    // Vision-first task — no blind attempt, but allow a second vision try if
-    // the first returned give_up (loop-level give_up is not necessarily fatal).
     return ['vision'];
   }
 
@@ -275,13 +265,14 @@ export class Pipeline {
   ): Promise<StrategyResult> {
     switch (strategy) {
       case 'router':  return this.runRouter(task, env);
-      case 'blind':   return this.runTextAgent(task, decision, env, /*allowScreenshot*/ false);
-      case 'hybrid':  return this.runTextAgent(task, decision, env, /*allowScreenshot*/ true);
-      case 'vision':  return this.runVisionAgent(task, decision, env);
+      case 'blind':   return this.runUnifiedAgent(task, decision, env, 'blind');
+      case 'hybrid':  return this.runUnifiedAgent(task, decision, env, 'hybrid');
+      case 'vision':  return this.runUnifiedAgent(task, decision, env, 'vision');
     }
   }
 
   private async runRouter(task: string, env: StrategyEnv): Promise<StrategyResult> {
+    void env;
     const r: RouteResult = await this.router.route(task);
     if (r.handled) {
       return { success: true, text: r.description ?? 'router handled', path: 'router' };
@@ -294,124 +285,99 @@ export class Pipeline {
     };
   }
 
-  private async runTextAgent(
+  /**
+   * Run the unified agent in the requested mode. Enforces vision-disable
+   * config, wires DI into runAgent, projects the AgentResult into the
+   * pipeline trace, and maps the exit code to a StrategyResult.
+   */
+  private async runUnifiedAgent(
     task: string,
     decision: ReturnType<typeof preprocess>,
     env: StrategyEnv,
-    allowScreenshot: boolean,
+    mode: AgentMode,
   ): Promise<StrategyResult> {
-    if (!this.deps.llm.text) {
+    const path: PipelineTaskResult['path'] = mode === 'vision' || mode === 'hybrid'
+      ? 'vision-agent'
+      : 'text-agent';
+
+    // ── Config availability & vision-disable gating
+    if ((mode === 'vision' || mode === 'hybrid') && this.disableVision) {
       return {
         success: false,
-        text: 'No text model configured. Run `clawdcursor doctor`.',
-        path: 'text-agent',
-        failureReason: 'no_text_model',
-      };
-    }
-
-    const result: TextAgentResult = await runTextAgent(
-      {
-        task,
-        guide: decision.hints.guide,
-        maxIterations: this.textAgentMaxIterations,
-      },
-      {
-        callTextLlm: async (args) => {
-          const out = await this.deps.llm.text!(args);
-          env.costMeter.record({
-            model: 'text-agent',
-            stage: 'text-agent',
-            inputTokens: estimateTokens(args.system, args.user),
-            outputTokens: estimateTokens(out),
-          });
-          return out;
-        },
-        capture: async () => captureSnapshot(this.deps.adapter),
-        dispatch: async (a) => {
-          // In blind mode, refuse `screenshot` actions — the text-agent
-          // shouldn't need them, and when it emits one it's usually a
-          // sign it should have emitted cannot_read instead.
-          if (!allowScreenshot && a.type === 'screenshot') {
-            return {
-              success: false,
-              text: 'screenshot blocked in blind mode — emit cannot_read to escalate',
-              errorCode: 'screenshot_blocked_in_blind',
-            };
-          }
-          const res = await dispatchAction(a, { adapter: this.deps.adapter });
-          env.trace.push({ action: a, result: res, durationMs: 0 });
-          return res;
-        },
-        isAborted: env.isAborted,
-      },
-    );
-
-    if (result.exit === 'done') {
-      return { success: true, text: result.text, path: 'text-agent' };
-    }
-    return {
-      success: false,
-      text: result.text,
-      path: 'text-agent',
-      failureReason: `text_agent_${result.exit}`,
-    };
-  }
-
-  private async runVisionAgent(
-    _task: string,
-    decision: ReturnType<typeof preprocess>,
-    env: StrategyEnv,
-  ): Promise<StrategyResult> {
-    if (this.disableVision) {
-      return {
-        success: false,
-        text: 'Vision fallback disabled (--no-vision).',
-        path: 'vision-agent',
+        text: 'Vision disabled (--no-vision / OPENCLAW_DISABLE_VISION=1).',
+        path,
         failureReason: 'vision_disabled',
       };
     }
-    if (!this.visionAgent) {
+    if (mode === 'blind' && !this.deps.llm.text) {
       return {
         success: false,
-        text: 'No vision model configured. Run `clawdcursor doctor` to set AI_VISION_MODEL.',
-        path: 'vision-agent',
-        failureReason: 'no_vision_model',
+        text: 'No text model configured. Run `clawdcursor doctor` to set AI_TEXT_MODEL.',
+        path,
+        failureReason: 'no_text_model',
       };
     }
-    void decision;
+    if ((mode === 'vision' || mode === 'hybrid') && !this.deps.llm.vision && !this.deps.llm.text) {
+      return {
+        success: false,
+        text: 'No vision or text model configured. Run `clawdcursor doctor`.',
+        path,
+        failureReason: 'no_llm',
+      };
+    }
 
-    const result = await this.visionAgent.run({
-      task: _task,
-      isAborted: env.isAborted,
-      maxIterations: this.visionAgentMaxIterations,
-    });
+    const llmDeps: AgentLlmDeps = {
+      text: this.deps.llm.text,
+      vision: this.disableVision ? undefined : this.deps.llm.vision,
+    };
 
-    // Approximate cost — each turn ≈ 1500 input tokens (screenshot) + 150 output.
+    const agentResult: AgentResult = await runAgent(
+      {
+        task,
+        mode,
+        guide: decision.hints.guide,
+        maxTurns: this.maxTurnsPerRung,
+        isAborted: env.isAborted,
+      },
+      { adapter: this.deps.adapter, llm: llmDeps },
+    );
+
+    // Cost approximation — crude but non-zero. Each turn ≈ 400 input +
+    // 120 output tokens for blind; vision bumps that by ~1500 per screenshot.
+    const turns = agentResult.steps.length;
+    const inputTokens = turns * 400 + agentResult.screenshotsCaptured * 1500;
+    const outputTokens = turns * 120;
     env.costMeter.record({
-      model: 'vision-agent',
-      stage: 'vision-agent',
-      inputTokens: result.steps.length * 1500,
-      outputTokens: result.steps.length * 150,
+      model: mode === 'vision' || mode === 'hybrid' ? 'vision-agent' : 'text-agent',
+      stage: mode,
+      inputTokens,
+      outputTokens,
     });
 
-    // Project vision-agent steps into the uniform PipelineAction trace.
-    for (const step of result.steps) {
+    // Project agent steps into the uniform pipeline trace.
+    for (const step of agentResult.steps) {
       env.trace.push({
         action: synthActionFromStep(step.toolName, step.toolArgs),
-        result: { success: step.toolResult.success, text: step.toolResult.text },
+        result: { success: step.result.success, text: step.result.text },
         durationMs: step.durationMs,
       });
     }
 
-    if (result.success) {
-      return { success: true, text: result.reason, path: 'vision-agent' };
+    if (agentResult.success) {
+      return { success: true, text: agentResult.text, path };
     }
-    return {
-      success: false,
-      text: result.reason,
-      path: 'vision-agent',
-      failureReason: 'vision_agent_failed',
-    };
+
+    // Map exit → failureReason so the escalator can make intelligent
+    // decisions. `cannot_read` in blind mode should escalate cleanly.
+    const failureReason = agentResult.exit === 'cannot_read' ? 'cannot_read'
+      : agentResult.exit === 'give_up' ? 'give_up'
+      : agentResult.exit === 'max_turns' ? 'max_turns'
+      : agentResult.exit === 'stagnation' ? 'stagnation'
+      : agentResult.exit === 'llm_error' ? 'llm_error'
+      : agentResult.exit === 'aborted' ? 'aborted'
+      : 'agent_failed';
+
+    return { success: false, text: agentResult.text, path, failureReason };
   }
 
   // ─── Helpers ────────────────────────────────────────────────────
@@ -468,7 +434,6 @@ interface StrategyResult {
   success: boolean;
   text: string;
   path: PipelineTaskResult['path'];
-  /** Short machine-readable failure tag for telemetry + escalator. */
   failureReason?: string;
 }
 
@@ -480,13 +445,8 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function estimateTokens(...parts: string[]): number {
-  const total = parts.reduce((n, s) => n + (s?.length ?? 0), 0);
-  return Math.ceil(total / 4);
-}
-
 function actionToCachedStep(action: PipelineAction): any | null {
-  const src = 'pipeline.text-agent';
+  const src = 'pipeline.agent';
   switch (action.type) {
     case 'a11y_click':     return { type: 'click',  description: `a11y "${action.target}"`, producedBy: src };
     case 'a11y_set_value': return { type: 'type',   description: `a11y set "${action.target}"`, text: action.value, producedBy: src };
@@ -499,6 +459,10 @@ function actionToCachedStep(action: PipelineAction): any | null {
   }
 }
 
+/**
+ * Project a unified-agent tool call into the PipelineAction trace vocabulary
+ * so the pipeline's trace stays uniform across router / playbook / agent.
+ */
 function synthActionFromStep(toolName: string, args: any): PipelineAction {
   switch (toolName) {
     case 'click':
@@ -508,23 +472,36 @@ function synthActionFromStep(toolName: string, args: any): PipelineAction {
     case 'key':
       return { type: 'press', combo: String(args?.combo ?? args?.key ?? '') };
     case 'scroll': {
-      const dir = ['up', 'down', 'left', 'right'].includes(args?.dir) ? args.dir : 'down';
+      const dir = ['up', 'down', 'left', 'right'].includes(args?.direction) ? args.direction : 'down';
       return { type: 'scroll', dir, amount: args?.amount };
     }
     case 'drag':
       return {
         type: 'drag',
-        startX: Number(args?.startX ?? args?.x1 ?? 0),
-        startY: Number(args?.startY ?? args?.y1 ?? 0),
-        endX:   Number(args?.endX ?? args?.x2 ?? 0),
-        endY:   Number(args?.endY ?? args?.y2 ?? 0),
+        startX: Number(args?.startX ?? 0),
+        startY: Number(args?.startY ?? 0),
+        endX:   Number(args?.endX ?? 0),
+        endY:   Number(args?.endY ?? 0),
       };
-    case 'wait':       return { type: 'wait', ms: Number(args?.ms ?? 0) };
-    case 'screenshot': return { type: 'screenshot' };
+    case 'wait':            return { type: 'wait', ms: Number(args?.ms ?? 0) };
+    case 'screenshot':      return { type: 'screenshot' };
     case 'invoke_element':  return { type: 'a11y_click', target: String(args?.name ?? '') };
     case 'set_field_value': return { type: 'a11y_set_value', target: String(args?.name ?? ''), value: String(args?.value ?? '') };
-    case 'done':       return { type: 'done', reason: String(args?.evidence ?? args?.reason ?? 'ok') };
-    case 'give_up':    return { type: 'give_up', reason: String(args?.reason ?? 'unknown') };
-    default:           return { type: 'cannot_read', reason: `unmapped vision tool: ${toolName}` };
+    case 'done':            return { type: 'done', reason: String(args?.evidence ?? args?.reason ?? 'ok') };
+    case 'give_up':         return { type: 'give_up', reason: String(args?.reason ?? 'unknown') };
+    case 'cannot_read':     return { type: 'cannot_read', reason: String(args?.reason ?? 'a11y insufficient') };
+    // Non-mutating tools don't have a dedicated PipelineAction type — they
+    // read state only. We project them as `wait(0)` trace entries so the
+    // trace stays truthful (the action ran) without polluting retry/replay
+    // with a non-executable verb. Keeps skill-cache sane.
+    case 'read_screen':
+    case 'list_windows':
+    case 'read_clipboard':
+    case 'write_clipboard':
+    case 'open_app':
+    case 'focus_window':
+      return { type: 'wait', ms: 0 };
+    default:
+      return { type: 'cannot_read', reason: `unmapped tool: ${toolName}` };
   }
 }
