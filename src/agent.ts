@@ -96,18 +96,18 @@ export class Agent {
   private useV2 = false;
   private pipelineV2: import('./v2/orchestrator').PipelineV2 | null = null;
 
-  /** Unified blind-first pipeline (set via --blind-first / OPENCLAW_PIPELINE=unified). */
-  private useBlindFirst = false;
+  /** Unified pipeline — default entry in v0.8.1. See `_executeTaskUnified`. */
+  private useUnifiedPipeline = false;
   private pipelineUnified: import('./pipeline').Pipeline | null = null;
 
-  /** Enable the v2 pipeline (vision-first agent + ground truth verifier). */
+  /** Enable the v2 pipeline (legacy; kept for one release behind an internal flag). */
   enableV2(): void {
     this.useV2 = true;
   }
 
-  /** Enable the unified blind-first pipeline (v0.8.1 default once stable). */
-  enableBlindFirst(): void {
-    this.useBlindFirst = true;
+  /** Opt into the unified pipeline. Called by default from `clawdcursor start`. */
+  enableUnifiedPipeline(): void {
+    this.useUnifiedPipeline = true;
   }
 
   constructor(config: ClawdConfig) {
@@ -428,7 +428,7 @@ public class WinAPI {
     });
 
     try {
-      if (this.useBlindFirst) {
+      if (this.useUnifiedPipeline) {
         return await Promise.race([this._executeTaskUnified(task, startTime), timeoutPromise]);
       }
       if (this.useV2) {
@@ -507,7 +507,9 @@ public class WinAPI {
   }
 
   /**
-   * v0.8.1 unified blind-first pipeline.
+   * v0.8.1 unified pipeline — blind-first by construction; vision is the
+   * fallback, not a competing default. Decomposer splits compound tasks
+   * into subtasks, each of which runs its own full pipeline cycle.
    *
    * Routes through: classify → router → knowledge → sense (a11y) →
    * text-agent (no screenshots) → vision-agent (fallback).
@@ -570,16 +572,16 @@ public class WinAPI {
       });
 
       if (!hasTextModel && !hasVisionModel) {
-        console.log('⚡ No AI model configured — blind-first pipeline will only handle router/playbook tasks.');
+        console.log('⚡ No AI model configured — only router/playbook tasks will run.');
         console.log('   Run `clawdcursor doctor` to configure an AI provider (any OpenAI-compatible endpoint).');
       } else {
         const textTag   = hasTextModel   ? `text=${pipelineConfig.layer2.model}`       : 'text=off';
         const visionTag = hasVisionModel ? `vision=${pipelineConfig.layer3!.model}`    : 'vision=off';
-        console.log(`🧠 Blind-first pipeline: ${textTag} ${visionTag}`);
+        console.log(`🧠 Pipeline ready: ${textTag} ${visionTag}`);
       }
     }
 
-    console.log(`\n🐾 [blind-first] Starting task: ${task}`);
+    console.log(`\n🐾 Task: ${task}`);
     this.state = { ...this.state, status: 'thinking', currentTask: task, stepsCompleted: 0, stepsTotal: 0 };
 
     const result = await this.pipelineUnified.run({
@@ -605,7 +607,7 @@ public class WinAPI {
           layer: result.path === 'router' ? 'router' as const : 'unified' as const,
         }];
 
-    console.log(`\n🏁 [blind-first] ${result.success ? '✅' : '❌'} path=${result.path} cost=$${result.costUsd.toFixed(4)} (${result.durationMs}ms)`);
+    console.log(`\n🏁 ${result.success ? '✅' : '❌'} path=${result.path} cost=$${result.costUsd.toFixed(4)} (${result.durationMs}ms)`);
     console.log(`   ${result.text}`);
 
     this.state.status = 'idle';

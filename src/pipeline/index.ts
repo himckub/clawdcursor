@@ -118,76 +118,133 @@ export class Pipeline {
     return runWithCorrelation({ correlationId, taskText: input.task }, async () => {
       log.info('pipeline.start');
 
-      // ── LAYER 1 — PREPROCESSOR ───────────────────────────────────
-      const active = await this.safeActiveWindow();
-      const decision = preprocess(input.task, {
-        activeWindowTitle: active?.title,
-        activeWindowProcessName: active?.processName,
+      // ── PREPROCESS ONCE to decide whether this is a compound task.
+      // If it is, each subtask runs the full pipeline independently.
+      const outerActive = await this.safeActiveWindow();
+      const outerDecision = preprocess(input.task, {
+        activeWindowTitle: outerActive?.title,
+        activeWindowProcessName: outerActive?.processName,
       });
       log.info('pipeline.preprocess', {
-        strategy: decision.strategy,
-        reason: decision.hints.reason,
-        appKey: decision.hints.appKey,
-        subtasks: decision.subtasks.length,
+        strategy: outerDecision.strategy,
+        reason: outerDecision.hints.reason,
+        appKey: outerDecision.hints.appKey,
+        subtasks: outerDecision.subtasks.length,
       });
 
-      // ── LAYER 2 + 3 — EXECUTE with escalation ladder ─────────────
-      // Ordered attempts: start at the preprocessor's pick, escalate up
-      // to `maxEscalations` rungs, always ending at vision (unless gated).
-      const ladder = this.buildLadder(decision.strategy);
-      log.debug('pipeline.ladder', { ladder });
+      const subtasks = outerDecision.subtasks.length > 0
+        ? outerDecision.subtasks
+        : [input.task];
 
-      const trace: PipelineTaskResult['trace'] = [];
+      // Subtask loop — each subtask re-preprocesses against the CURRENT
+      // active window (Paint may be in focus only AFTER subtask 1 opens it),
+      // picks its own strategy, runs its own escalation ladder.
+      const aggregateTrace: PipelineTaskResult['trace'] = [];
       let lastText = '';
       let lastPath: PipelineTaskResult['path'] = 'text-agent';
-      let rungsTried = 0;
 
-      for (const rung of ladder) {
+      for (let i = 0; i < subtasks.length; i++) {
         if (isAborted()) {
           return this.buildResult({
             success: false, path: lastPath, costMeter, startedAt, correlationId,
-            text: 'aborted', trace,
+            text: 'aborted', trace: aggregateTrace,
           });
         }
-        if (rungsTried >= this.maxEscalations) break;
-        rungsTried++;
 
-        log.info('pipeline.rung', { strategy: rung, attempt: rungsTried });
+        const subtask = subtasks[i];
+        log.info('pipeline.subtask', { index: i + 1, of: subtasks.length, subtask });
 
-        const attempt = await this.executeStrategy(
-          rung,
-          input.task,
-          decision,
-          { costMeter, log, isAborted, trace },
+        // Re-preprocess each subtask — active window may have changed
+        // (opening Paint, then "draw stickfigure" needs Paint-aware context).
+        const subActive = await this.safeActiveWindow();
+        const subDecision = i === 0 && subtasks.length === 1
+          ? outerDecision  // single subtask — reuse outer preprocess
+          : preprocess(subtask, {
+              activeWindowTitle: subActive?.title,
+              activeWindowProcessName: subActive?.processName,
+            });
+
+        const subResult = await this.runOneSubtask(
+          subtask,
+          subDecision,
+          { costMeter, log, isAborted, trace: aggregateTrace },
         );
 
-        lastText = attempt.text;
-        lastPath = attempt.path;
-        // Each executeStrategy appends to trace directly (via dispatch
-        // callbacks). Success ends the ladder immediately.
-        if (attempt.success) {
-          this.recordSkillOnPass(input.task, trace, active?.processName).catch(() => {});
+        lastText = subResult.text;
+        lastPath = subResult.path;
+
+        if (!subResult.success) {
+          // A failed subtask aborts the chain — no point typing "hello"
+          // into Notepad if opening Notepad failed.
+          log.warn('pipeline.subtask.failed_chain_abort', {
+            index: i + 1,
+            subtask,
+            path: subResult.path,
+            reason: subResult.failureReason,
+          });
           return this.buildResult({
-            success: true, path: attempt.path, costMeter, startedAt, correlationId,
-            text: attempt.text, trace,
+            success: false, path: subResult.path, costMeter, startedAt, correlationId,
+            text: subtasks.length > 1
+              ? `Subtask ${i + 1}/${subtasks.length} failed ("${subtask}"): ${subResult.text}`
+              : subResult.text,
+            trace: aggregateTrace,
           });
         }
 
-        // On failure, log WHY so escalation is visible.
-        log.info('pipeline.rung.failed', {
-          strategy: rung,
-          reason: attempt.failureReason,
-          attempt: rungsTried,
-        });
+        // Brief settle between subtasks so the next preprocess sees the
+        // correct active window (launching an app takes ~100-500ms to surface).
+        if (i < subtasks.length - 1) await delay(400);
       }
 
-      // All rungs exhausted — honest fail.
+      // All subtasks passed.
+      this.recordSkillOnPass(input.task, aggregateTrace, outerActive?.processName).catch(() => {});
       return this.buildResult({
-        success: false, path: lastPath, costMeter, startedAt, correlationId,
-        text: lastText || 'All pipeline rungs failed to resolve the task.',
-        trace,
+        success: true, path: lastPath, costMeter, startedAt, correlationId,
+        text: subtasks.length > 1
+          ? `All ${subtasks.length} subtasks completed. Last: ${lastText}`
+          : lastText,
+        trace: aggregateTrace,
       });
     });
+  }
+
+  /**
+   * Run one subtask through the full pipeline — classify/router/blind/hybrid/vision
+   * with the escalation ladder. Called once per subtask from run().
+   */
+  private async runOneSubtask(
+    task: string,
+    decision: ReturnType<typeof preprocess>,
+    env: StrategyEnv,
+  ): Promise<StrategyResult> {
+    const ladder = this.buildLadder(decision.strategy);
+    env.log.debug('pipeline.ladder', { ladder, strategy: decision.strategy });
+
+    let last: StrategyResult = {
+      success: false, path: 'text-agent',
+      text: 'no strategies tried', failureReason: 'no_ladder',
+    };
+    let rungsTried = 0;
+
+    for (const rung of ladder) {
+      if (env.isAborted()) {
+        return { success: false, path: last.path, text: 'aborted', failureReason: 'aborted' };
+      }
+      if (rungsTried >= this.maxEscalations) break;
+      rungsTried++;
+
+      env.log.info('pipeline.rung', { strategy: rung, attempt: rungsTried });
+
+      const attempt = await this.executeStrategy(rung, task, decision, env);
+      last = attempt;
+      if (attempt.success) return attempt;
+
+      env.log.info('pipeline.rung.failed', {
+        strategy: rung, reason: attempt.failureReason, attempt: rungsTried,
+      });
+    }
+
+    return last;
   }
 
   // ─── Strategy dispatch ──────────────────────────────────────────
@@ -418,6 +475,10 @@ interface StrategyResult {
 export type { TaskResult } from './types';
 
 // ─── Private utilities ──────────────────────────────────────────────
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function estimateTokens(...parts: string[]): number {
   const total = parts.reduce((n, s) => n + (s?.length ?? 0), 0);

@@ -58,7 +58,7 @@ const READY_TIMEOUT_MS = 8_000;
  * decomposer is supposed to split them first; if the router sees "X and Y"
  * with action verbs on both sides it refuses rather than guess.
  */
-const COMPOUND_PATTERN = /\b(and|then)\b.*\b(type|click|press|open|save|send|scroll|navigate|go|visit|search|copy|paste|close)\b/i;
+const COMPOUND_PATTERN = /\b(and|then)\b.*\b(type|click|press|open|save|send|scroll|navigate|go|visit|search|copy|paste|close|draw|sketch|paint|write|compute|calculate|fill|submit|enter|summarize|describe|read|select|focus|switch|minimize|maximize|check|uncheck|highlight|delete|move|rename|find|look)\b/i;
 
 const URL_PATTERN = /\b(https?:\/\/|www\.|\S+\.(com|org|io|dev|net|co|app))\b/i;
 const OPEN_APP_PATTERN = /^\s*(?:open|launch|start|run)\s+(.+?)\s*$/i;
@@ -129,6 +129,21 @@ export class Router {
    * detach, etc.).
    */
   private async handleOpenApp(appName: string): Promise<RouteResult> {
+    // Defence against greedy capture: the OPEN_APP_PATTERN is `open (.+?)$`,
+    // which on "open paint and draw a stick figure" captures the whole tail.
+    // The preprocessor SHOULD have decomposed that into subtasks upstream,
+    // but if anything slips through, refuse here rather than Start-Menu-type
+    // the whole phrase into Edge's address bar (the v0.4.0 regression).
+    if (/\s+(?:and|then)\s+/i.test(appName) || /,/.test(appName)) {
+      this.telemetry.compoundRefused += 1;
+      logger.warn('router.open_app.refused_compound_name', { appName });
+      return {
+        handled: false,
+        path: 'none',
+        description: `refused: compound app name "${appName}" — decomposer should have split this`,
+      };
+    }
+
     const normalized = appName.toLowerCase().replace(/['"]/g, '');
     const alias = resolveAlias(normalized);
     const searchTerm = alias?.searchTerm ?? appName;

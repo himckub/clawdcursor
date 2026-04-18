@@ -19,7 +19,7 @@ export interface DecomposeResult {
   keptAsOne: boolean;
 }
 
-const ACTION_VERB = /^(open|close|click|tap|type|press|save|go|navigate|visit|search|find|create|delete|write|send|copy|paste|select|drag|scroll(\s+up|\s+down)?(\s+and)?|download|upload|install|run|set|change|turn|enable|disable|check|uncheck|fill|submit|compose|reply|forward|focus|switch|minimize|maximize|summarize|read|extract|draw|paint|sketch|resize)\b/i;
+const ACTION_VERB = /^(open|close|click|tap|type|press|save|go|navigate|visit|search|find|create|delete|write|send|copy|paste|select|drag|scroll(\s+up|\s+down)?(\s+and)?|download|upload|install|run|set|change|turn|enable|disable|check|uncheck|fill|submit|compose|reply|forward|focus|switch|minimize|maximize|summarize|read|extract|draw|paint|sketch|resize|compute|calculate|add|subtract|multiply|divide|highlight|describe|enter|show|display|play|pause|stop|start|restart|refresh|reload|zoom|expand|collapse|rename|move|sort|filter|attach|insert|remove|undo|redo|cut)\b/i;
 
 /**
  * Split a compound task on ` and `, ` then `, or `,` — quote-aware.

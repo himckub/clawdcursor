@@ -198,9 +198,8 @@ program
   .option('--api-key <key>', 'AI provider API key')
   .option('--debug', 'Save screenshots to debug/ folder (off by default)')
   .option('--accept', 'Accept desktop control consent non-interactively and start')
-  .option('--v2', 'Use the v2 architecture (vision-first agent + ground truth verifier, no legacy layers)')
-  .option('--blind-first', 'Use the v0.8.1 unified blind-first pipeline (a11y + OCR + text model before vision)')
-  .option('--no-vision', 'Refuse vision fallback — text-agent only (high-security mode)')
+  .option('--legacy', 'Use the v0.7 legacy cascade (escape hatch for v0.8.1 regressions; removed in v0.9.0)')
+  .option('--no-vision', 'Refuse vision fallback — blind-first only (high-security mode)')
   .action(async (opts) => {
     // Single-instance guard
     const existingPid = claimPidFile('start');
@@ -287,22 +286,19 @@ program
     }
 
     // ── Agent ──────────────────────────────────────────────────────────────
+    //
+    // Default = the unified pipeline (blind-first by construction: a11y/OCR
+    // tried first, vision as fallback, decomposer splits compound tasks so
+    // each one runs its own full cycle). --legacy is the single escape hatch
+    // for the v0.7 cascade; scheduled for removal in v0.9.0.
     const agent = new Agent(config);
 
-    // Pipeline selection: --blind-first flag (or OPENCLAW_PIPELINE=unified env)
-    // wins over --v2. Default remains the v0.7 legacy cascade until v0.8.1
-    // stabilizes (per plan §4.4). --no-vision is propagated via env for the
-    // unified pipeline; ignored for v1/v2.
-    const envPipeline = (process.env.OPENCLAW_PIPELINE || '').toLowerCase();
-    if (opts.noVision) {
-      process.env.OPENCLAW_DISABLE_VISION = '1';
-    }
-    if (opts.blindFirst || envPipeline === 'unified' || envPipeline === 'blind-first') {
-      agent.enableBlindFirst();
-      console.log(`${e('🧠', '[blind-first]')} Using unified blind-first pipeline (a11y → OCR → text model → vision fallback)`);
-    } else if (opts.v2) {
-      agent.enableV2();
-      console.log(`${e('🚀', '[v2]')} Using v2 architecture (vision-first agent + ground truth verifier)`);
+    if (opts.noVision) process.env.OPENCLAW_DISABLE_VISION = '1';
+
+    if (!opts.legacy) {
+      agent.enableUnifiedPipeline();
+    } else {
+      console.log(`${e('🕰️', '[legacy]')} Using v0.7 legacy cascade (--legacy flag; slated for removal in v0.9.0)`);
     }
 
     try {
