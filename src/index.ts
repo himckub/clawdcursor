@@ -975,7 +975,8 @@ async function createToolContext() {
 program
   .command('mcp')
   .description('Run as MCP tool server over stdio (for Claude Code, Cursor, Windsurf, Zed)')
-  .action(async () => {
+  .option('--compact', 'Expose 6 compound tools instead of 72 granular ones (Anthropic Computer-Use style — recommended for most agents)')
+  .action(async (opts: { compact?: boolean }) => {
     // Single-instance guard (MCP servers can accumulate when editors restart them)
     const existingMcpPid = claimPidFile('mcp');
     if (existingMcpPid !== null) {
@@ -1004,9 +1005,10 @@ program
       process.exit(1);
     }
 
-    console.log('clawdcursor MCP mode starting...');
+    const mode = opts.compact ? 'compact' : 'granular';
+    console.log(`clawdcursor MCP mode starting... (${mode})`);
 
-    const { getAllTools } = await import('./tools');
+    const { getAllTools, getCompactSurface } = await import('./tools');
     const ctx = await createToolContext();
 
     // Dynamic import MCP SDK (ESM package from CJS)
@@ -1016,8 +1018,10 @@ program
 
     const server = new McpServer({ name: 'clawdcursor', version: '0.7.2' });
 
-    // Register all tools from the unified registry
-    const tools = getAllTools();
+    // Register tools. `--compact` ships the 6 compound tools that mirror
+    // Anthropic's computer_20250124 shape; default is the 72-tool granular
+    // surface (back-compat for existing MCP wirings).
+    const tools = opts.compact ? getCompactSurface() : getAllTools();
     for (const tool of tools) {
       // Convert parameters to Zod schema
       const zodParams: Record<string, any> = {};

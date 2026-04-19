@@ -125,10 +125,26 @@ clawdcursor serve        # starts on http://127.0.0.1:3847
 All POST endpoints require `Authorization: Bearer <token>` (token at `~/.clawdcursor/token`).
 
 ```
-GET  /tools              → all tool schemas (OpenAI function-calling format)
-POST /execute/{name}     → run a tool: {"param": "value"}
-GET  /health             → {"status":"ok","version":"0.8.0"}
-GET  /docs               → full documentation
+GET  /tools                  → 72 granular tool schemas (OpenAI function-calling format)
+GET  /tools?mode=compact     → 6 compound tools (Anthropic Computer-Use style — recommended for LLMs)
+POST /execute/{name}         → run a tool by name (accepts granular OR compact names)
+GET  /health                 → {"status":"ok","version":"0.8.x"}
+GET  /docs                   → full documentation
+GET  /docs?mode=compact      → docs for the compact surface
+```
+
+**Two surfaces, pick one:**
+
+- **Granular (default, 72 tools)** — each primitive has its own tool schema. Use when you're writing code that calls individual tools by name.
+- **Compact (`?mode=compact`, 6 tools)** — `computer` / `accessibility` / `window` / `system` / `browser` / `task`. Each takes an `action` enum + flat arg bag. ~12× smaller tool catalog. **Use this when you're an LLM agent** — same decision shape Anthropic's `computer_20250124` uses.
+
+Example compact calls:
+```
+POST /execute/computer       {"action": "click", "x": 500, "y": 300}
+POST /execute/computer       {"action": "type", "text": "hello"}
+POST /execute/accessibility  {"action": "invoke", "name": "Send"}
+POST /execute/window         {"action": "maximize"}
+POST /execute/task           {"instruction": "open Notepad and type hello"}
 ```
 
 If the server isn't running, start it yourself — don't ask the user:
@@ -139,6 +155,7 @@ clawdcursor serve
 
 ### Option B — MCP (`clawdcursor mcp`)
 
+**Granular mode** — every primitive as its own MCP tool (72 tools, back-compat):
 ```json
 {
   "mcpServers": {
@@ -150,8 +167,29 @@ clawdcursor serve
 }
 ```
 
-Works with Claude Code, Cursor, Windsurf, Zed, or any MCP-compatible client. All 42
-tools are exposed identically.
+**Compact mode** — 6 compound tools (Anthropic Computer-Use style, recommended for LLMs):
+```json
+{
+  "mcpServers": {
+    "clawdcursor": {
+      "command": "clawdcursor",
+      "args": ["mcp", "--compact"]
+    }
+  }
+}
+```
+
+In compact mode your MCP client sees:
+- `computer(action, …)` — click/type/key/scroll/drag/hover/move/screenshot/wait
+- `accessibility(action, …)` — read-tree/find/invoke/focus/toggle/expand/set_value/…
+- `window(action, …)` — focus/max/min/restore/close/resize/list/list_displays/open_app/open_url/…
+- `system(action, …)` — clipboard/time/ocr/undo/shortcuts
+- `browser(action, …)` — CDP primitives (connect/click/type/evaluate/…)
+- `task({instruction, …})` — hand a whole natural-language task to clawdcursor's pipeline
+
+Works with Claude Code, Cursor, Windsurf, Zed, or any MCP-compatible client.
+Both modes return identical semantics — the compact surface just delegates each
+compound action to the granular tool underneath.
 
 ### Option C — Autonomous agent (`clawdcursor start`)
 

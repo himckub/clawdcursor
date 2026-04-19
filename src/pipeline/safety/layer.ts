@@ -164,6 +164,18 @@ const TOOL_TIER: Record<string, Tier> = {
   'a11y_get_value': 'read',
   'get_element_state': 'read',
   'a11y_list_children': 'read',
+  // Tranche 3 — compact compound MCP surface. When an agent calls one of
+  // these, the real action is decided by the `action` arg (already
+  // unpacked above via unpackCompoundTool for the unified-agent compound
+  // tools: mouse/keyboard/window). These public-MCP names share the
+  // same canonicalization philosophy — tier defaults to 'input' and the
+  // delegated granular tool's tier kicks in during actual dispatch.
+  'computer': 'input',
+  'accessibility': 'read',
+  'window': 'input',
+  'system': 'input',
+  'browser': 'input',
+  'task': 'input',
 };
 
 /**
@@ -177,6 +189,59 @@ const TOOL_TIER: Record<string, Tier> = {
  * tier entries needed.
  */
 function unpackCompoundTool(tool: string, args: Record<string, unknown>): string {
+  // Tranche 3 public-MCP compound tools: computer/accessibility/window/
+  // system/browser/task. These are dispatched inside compact.ts and the
+  // granular delegate handles the real action — but for the audit log
+  // we want to surface the granular name here so forensic trails make
+  // sense. Mapping mirrors compact.ts's ACTION_MAP tables.
+  const publicCompoundMap: Record<string, Record<string, string>> = {
+    computer: {
+      screenshot: 'desktop_screenshot', screenshot_region: 'desktop_screenshot_region',
+      click: 'mouse_click', double_click: 'mouse_double_click', right_click: 'mouse_right_click',
+      middle_click: 'mouse_middle_click', triple_click: 'mouse_triple_click',
+      hover: 'mouse_hover', move: 'mouse_hover', move_relative: 'mouse_move_relative',
+      scroll: 'mouse_scroll', scroll_horizontal: 'mouse_scroll_horizontal',
+      drag: 'mouse_drag', drag_path: 'mouse_drag_stepped',
+      mouse_down: 'mouse_down', mouse_up: 'mouse_up',
+      type: 'type_text', key: 'key_press', key_press: 'key_press',
+      key_down: 'key_down', key_up: 'key_up', wait: 'wait',
+    },
+    accessibility: {
+      read_tree: 'read_screen', find: 'find_element', get_element: 'a11y_get_element',
+      focused: 'get_focused_element', invoke: 'invoke_element', focus: 'focus_element',
+      set_value: 'set_field_value', get_value: 'a11y_get_value',
+      expand: 'a11y_expand', collapse: 'a11y_collapse',
+      toggle: 'a11y_toggle', select: 'a11y_select', state: 'get_element_state',
+      list_children: 'a11y_list_children', wait_for: 'wait_for_element',
+    },
+    window: {
+      list: 'get_windows', active: 'get_active_window', focus: 'focus_window',
+      maximize: 'maximize_window', minimize: 'minimize_window_to_taskbar',
+      restore: 'restore_window', close: 'close_window', resize: 'resize_window',
+      list_displays: 'list_displays', screen_size: 'get_screen_size',
+      open_app: 'open_app', open_file: 'open_file', open_url: 'open_url',
+      switch_tab: 'switch_tab_os', navigate: 'navigate_browser',
+    },
+    system: {
+      clipboard_read: 'read_clipboard', clipboard_write: 'write_clipboard',
+      system_time: 'get_system_time', ocr: 'ocr_read_screen', undo: 'undo_last',
+      shortcuts_list: 'shortcuts_list', shortcuts_run: 'shortcuts_execute',
+      delegate: 'delegate_to_agent',
+    },
+    browser: {
+      connect: 'cdp_connect', page_context: 'cdp_page_context', read_text: 'cdp_read_text',
+      click: 'cdp_click', type: 'cdp_type', select_option: 'cdp_select_option',
+      evaluate: 'cdp_evaluate', wait_for: 'cdp_wait_for_selector',
+      list_tabs: 'cdp_list_tabs', switch_tab: 'cdp_switch_tab', scroll: 'cdp_scroll',
+    },
+  };
+  const actionArg = typeof args.action === 'string' ? args.action : '';
+  if (tool in publicCompoundMap && actionArg) {
+    const mapped = publicCompoundMap[tool][actionArg];
+    if (mapped) return mapped;
+  }
+  if (tool === 'task') return 'delegate_to_agent';
+
   if (tool !== 'mouse' && tool !== 'keyboard' && tool !== 'window') return tool;
   const action = typeof args.action === 'string' ? args.action : '';
 
