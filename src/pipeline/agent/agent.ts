@@ -266,6 +266,45 @@ export async function runAgent(input: AgentInput, deps: AgentDeps): Promise<Agen
           continue;
         }
 
+        // 5a' v0.8.3 RUNAWAY GUARD. If the agent has issued the SAME
+        // tool+args combination more than REPEAT_THRESHOLD times in the
+        // last REPEAT_WINDOW turns, force-exit with `give_up`. This is the
+        // fix for the "Outlook keeps opening" class of bug — when the
+        // agent can't see the result of its own action (sparse WebView2
+        // a11y, for example) it sometimes re-issues the same action every
+        // turn. Platform-level idempotency on open_app already prevents
+        // duplicate Outlook windows; this guard protects against the same
+        // anti-pattern generalized to every tool.
+        const REPEAT_THRESHOLD = 3;
+        const REPEAT_WINDOW = 6;
+        const argKey = JSON.stringify(call.args ?? {});
+        const recentRepeats = steps
+          .slice(-REPEAT_WINDOW)
+          .filter(s => s.toolName === call.name && JSON.stringify(s.toolArgs ?? {}) === argKey)
+          .length;
+        if (recentRepeats >= REPEAT_THRESHOLD) {
+          log.warn('agent.runaway_guard', {
+            turn, tool: call.name, repeats: recentRepeats, window: REPEAT_WINDOW,
+          });
+          steps.push({
+            turn,
+            toolName: call.name,
+            toolArgs: call.args,
+            result: {
+              success: false,
+              text: `runaway-guard: ${call.name} called ${recentRepeats} times in last ${REPEAT_WINDOW} turns with same args — aborting to prevent infinite loop`,
+            },
+            durationMs: Date.now() - turnStart,
+            fingerprintChanged: false,
+            thought: llmResult.text,
+          });
+          return finish(
+            'give_up',
+            `runaway-guard: repeated ${call.name} with identical args (${recentRepeats}× in last ${REPEAT_WINDOW} turns). The agent is likely unable to see whether the action succeeded — try a different approach or use detect_webview_apps + CDP bridge if the target is an Electron/WebView2 app.`,
+            steps, llmCalls, screenshotsCaptured.n, startedAt,
+          );
+        }
+
         // 5b. Log and execute.
         log.info(EVENTS.AGENT_TOOL_CALL, { turn, tool: call.name, args: compactArgs(call.args) });
         const toolStart = Date.now();

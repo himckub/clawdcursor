@@ -2,6 +2,23 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
+## [0.8.3] - 2026-04-19 — Hotfix: "Outlook keeps opening" + runaway guard
+
+User reported Outlook launching repeatedly during a test. Root-cause diagnosis traced to three compounding failures: (1) `PlatformAdapter.openApp` spawned a new instance even when the app was already running, (2) the escalation ladder (router → blind → hybrid → vision) re-ran `open_app` at each rung because earlier rungs couldn't verify success through New Outlook's sparse WebView2 accessibility tree, (3) `clawdcursor stop` only killed the `start` process on port 3847, missing `serve` (different port / same port different process) and `mcp` (stdio, no port) entirely. A stale `serve` kept receiving MCP traffic after the user thought they'd stopped everything.
+
+### Fixed
+
+- **`openApp` / `launchApp` idempotency** (Windows + macOS + Linux). When the target app already has a visible window AND the caller didn't set `alwaysNewInstance: true` AND no `url` is passed, the adapter now focuses the existing window and returns its pid instead of spawning another instance. Match policy: case-insensitive exact processName → processName substring → title substring → UWP AppId tail. Closes the "N windows of Outlook stacking up" class of bug under any retry loop. `src/v2/platform/{windows,macos,linux}.ts`.
+- **Agent runaway guard** — if the agent calls the same tool + identical args ≥ 3 times within the last 6 turns, the loop exits with `give_up` and a targeted message suggesting `detect_webview_apps` when the target is likely Electron/WebView2. Prevents the generalized "retry-loop-because-a11y-is-opaque" anti-pattern. `src/pipeline/agent/agent.ts`.
+- **`clawdcursor stop` now sweeps all modes.** After the graceful `/stop` on port 3847, iterates every pidfile in `~/.clawdcursor/*.pid`, SIGTERMs any live pid, SIGKILLs after 500ms if still running, and unlinks the pidfile. Catches `mcp` (stdio-only), zombie `serve`, and any start/serve on a non-default port. `src/index.ts`.
+
+### Notes
+
+- Stale-pidfile cleanup at startup was already correct via `claimPidFile` (checks `isProcessAlive(existingPid)` and overwrites when dead) — no code change needed there; the issue was exclusively `stop`.
+- Tests: 429 / 430 pass (1 skipped, same as 0.8.2). No schema snapshot change — these are behavioral fixes, not catalog changes.
+
+---
+
 ## [0.8.2] - 2026-04-19 — Session reliability, force-focus, Electron bridge
 
 First-time-user review surfaced six concrete pain points. This release fixes every one.

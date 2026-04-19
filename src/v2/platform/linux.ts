@@ -1033,6 +1033,24 @@ export class LinuxAdapter implements PlatformAdapter {
     }
     const settleMs = opts?.alwaysNewInstance ? 1200 : 800;
 
+    // v0.8.3 — idempotency. Check for an existing window before spawning.
+    // Linux doesn't have macOS's "open -a" activation semantics, so a
+    // second spawn of the same binary would normally create a second
+    // instance. Focus the existing one and return its pid instead.
+    if (!opts?.alwaysNewInstance && !opts?.url) {
+      const target = name.trim().toLowerCase();
+      const windows = await this.listWindows();
+      const existing = windows.find(w =>
+        w.processName.toLowerCase() === target ||
+        w.processName.toLowerCase().includes(target) ||
+        w.title.toLowerCase().includes(target),
+      );
+      if (existing) {
+        await this.focusWindow({ processId: existing.processId }).catch(() => {});
+        return { pid: existing.processId, title: existing.title, handle: existing.handle };
+      }
+    }
+
     // 1) Try the bare executable name directly (detached so it survives us).
     const directArgs: string[] = [];
     if (opts?.url) directArgs.push(opts.url);

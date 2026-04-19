@@ -586,6 +586,41 @@ program
       }
     }
 
+    // v0.8.3 — also sweep every other clawdcursor-owned pidfile (mcp, serve,
+    // start) and kill anything still alive. The old `stop` only targeted
+    // port 3847 via `/stop`, which missed `mcp` (stdio, no port) and any
+    // zombie `serve` / `start` that had crashed-but-not-released its pidfile.
+    // User-reported symptom: "Outlook keeps opening" — a stale serve process
+    // was still receiving MCP / REST traffic after the user thought they'd
+    // stopped. This sweep ensures `clawdcursor stop` means stop EVERYTHING.
+    let sweptCount = 0;
+    for (const mode of ['start', 'mcp', 'serve'] as const) {
+      try {
+        const pidPath = pidFilePath(mode);
+        if (!fs.existsSync(pidPath)) continue;
+        const pid = parseInt(fs.readFileSync(pidPath, 'utf-8').trim(), 10);
+        if (isNaN(pid) || pid === process.pid) { fs.unlinkSync(pidPath); continue; }
+        if (isProcessAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGTERM');
+            // Give it a moment to exit gracefully, then SIGKILL if still up.
+            await new Promise(r => setTimeout(r, 500));
+            if (isProcessAlive(pid)) process.kill(pid, 'SIGKILL');
+            sweptCount++;
+            console.log(`${e('🐾', '>')} Stopped ${mode} instance (pid ${pid})`);
+          } catch {
+            // Could not kill — the process may be owned by a different user.
+            console.warn(`${e('⚠', '[WARN]')} Could not stop ${mode} pid ${pid}`);
+          }
+        }
+        // Clean up the pidfile regardless.
+        try { fs.unlinkSync(pidPath); } catch {}
+      } catch { /* best-effort */ }
+    }
+    if (sweptCount > 0) {
+      console.log(`${e('✅', '[OK]')} Swept ${sweptCount} additional clawdcursor instance${sweptCount === 1 ? '' : 's'}`);
+    }
+
     if (process.platform === 'darwin') {
       await stopHostApp();
     }

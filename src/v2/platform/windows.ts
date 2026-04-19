@@ -806,6 +806,21 @@ export class WindowsAdapter implements PlatformAdapter {
       throw new Error('launchApp: illegal characters in app name');
     }
 
+    // v0.8.3 — idempotency: if the app is already running AND caller didn't
+    // ask for a fresh instance, FOCUS the existing window instead of spawning
+    // another. This closes the "Outlook keeps opening" bug: a retry loop that
+    // launches Outlook every iteration used to spawn a new instance each time
+    // (Start-Process -FilePath outlook with Outlook already running launches
+    // a fresh window).
+    if (!opts?.alwaysNewInstance && !opts?.url) {
+      const existing = await this.findExistingAppWindow(name, opts?.uwpAppId);
+      if (existing) {
+        // Focus it so it surfaces like a launch would, then return its identity.
+        await this.focusWindow({ processId: existing.processId }).catch(() => {});
+        return { pid: existing.processId, title: existing.title, handle: existing.handle };
+      }
+    }
+
     // Route 1: UWP apps via explorer shell:AppsFolder\<id>. This is the Windows-
     // sanctioned way to launch UWP / Store apps and is rock-solid — Calculator,
     // Notepad-Win11, Photos, etc. all work.
@@ -871,6 +886,54 @@ export class WindowsAdapter implements PlatformAdapter {
       return win ? { pid: win.processId, title: win.title } : {};
     } catch {
       return {};
+    }
+  }
+
+  /**
+   * v0.8.3 — check whether an app matching `name` or `uwpAppId` already has
+   * a visible top-level window. Used by `launchApp` to short-circuit when
+   * the user / agent asks to "open Outlook" but Outlook is already running.
+   *
+   * Match policy: case-insensitive process-name / title substring, which
+   * matches the same alias set the router uses. A `uwpAppId` like
+   * `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App` is reduced to its App
+   * token (`App`, `Calculator`) and matched against window titles as a
+   * fallback.
+   *
+   * Returns `null` when no matching window is found — caller proceeds with
+   * a normal launch.
+   */
+  private async findExistingAppWindow(
+    name: string,
+    uwpAppId?: string,
+  ): Promise<WindowInfo | null> {
+    try {
+      const windows = await this.listWindows();
+      if (windows.length === 0) return null;
+      const target = name.trim().toLowerCase();
+      // Strip any trailing `.exe` so `outlook.exe` still matches `outlook`.
+      const targetStem = target.replace(/\.(exe|com|app)$/, '');
+
+      // Tier 1: exact processName match.
+      let hit = windows.find(w => w.processName.toLowerCase() === targetStem);
+      // Tier 2: processName substring (handles olk ↔ outlook etc.).
+      if (!hit) hit = windows.find(w => w.processName.toLowerCase().includes(targetStem));
+      // Tier 3: reverse — targetStem contains processName (e.g. name="msedge.exe", proc="msedge").
+      if (!hit) hit = windows.find(w => targetStem.includes(w.processName.toLowerCase()) && w.processName.length >= 3);
+      // Tier 4: title substring.
+      if (!hit) hit = windows.find(w => w.title.toLowerCase().includes(targetStem));
+
+      // UWP fallback — check the AppsFolder id's last segment against titles.
+      if (!hit && uwpAppId) {
+        const uwpTail = uwpAppId.split('!').pop()?.toLowerCase() ?? '';
+        if (uwpTail) hit = windows.find(w => w.title.toLowerCase().includes(uwpTail));
+      }
+
+      // Skip minimized windows — if the user hid it, they probably want a
+      // "fresh" focus, but we still return it so focusWindow can restore.
+      return hit ?? null;
+    } catch {
+      return null;
     }
   }
 

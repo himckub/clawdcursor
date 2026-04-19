@@ -711,6 +711,28 @@ export class MacOSAdapter implements PlatformAdapter {
     if (/[\r\n\t\x00-\x1f]/.test(name)) {
       throw new Error('launchApp: illegal characters in app name');
     }
+
+    // v0.8.3 — idempotency. On macOS `open -a AppName` is generally smart
+    // about not spawning duplicates (it activates the existing app), but
+    // we want a stable cross-OS contract: check first, focus-if-running,
+    // launch only when needed. Prevents the "Outlook keeps opening" class
+    // of bug from any retry loop in the pipeline.
+    if (!opts?.alwaysNewInstance && !opts?.url) {
+      try {
+        const target = name.toLowerCase();
+        const windows = await this.listWindows();
+        const existing = windows.find(w =>
+          w.processName.toLowerCase() === target ||
+          w.processName.toLowerCase().includes(target) ||
+          w.title.toLowerCase().includes(target),
+        );
+        if (existing) {
+          await this.focusWindow({ processId: existing.processId }).catch(() => {});
+          return { pid: existing.processId, title: existing.title, handle: existing.handle };
+        }
+      } catch { /* fall through to launch */ }
+    }
+
     try {
       const args = ['-a', name];
       if (opts?.alwaysNewInstance) args.unshift('-n');
