@@ -16,6 +16,7 @@
 
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
+import * as path from 'path';
 import sharp from 'sharp';
 import {
   mouse,
@@ -47,6 +48,12 @@ const execFileAsync = promisify(execFile);
 // Tunables
 const TOOL_TIMEOUT_MS = 3_000;
 const SCREENSHOT_TIMEOUT_MS = 10_000;
+/**
+ * AT-SPI tree walks can be slow on big apps — give them a longer budget
+ * than the generic tool timeout. Python bridge caps its own traversal at
+ * MAX_TREE_NODES to prevent runaway calls.
+ */
+const A11Y_TIMEOUT_MS = 10_000;
 
 export class LinuxAdapter implements PlatformAdapter {
   readonly platform = 'linux' as const;
@@ -70,6 +77,16 @@ export class LinuxAdapter implements PlatformAdapter {
    * adapter's permission probe reports input=false.
    */
   private wayland: WaylandBackend = new WaylandBackend('none');
+  /**
+   * AT-SPI D-Bus a11y bridge state (Tranche 4b). The bridge is a
+   * self-contained Python script (scripts/linux/atspi-bridge.py) that
+   * wraps gi.repository.Atspi. We probe its availability at init —
+   * requires python3 + python3-gi + gir1.2-atspi-2.0. When unavailable
+   * every a11y method returns its pre-existing safe empty response so
+   * nothing regresses on boxes without AT-SPI.
+   */
+  private atspiAvailable = false;
+  private atspiScript = '';
 
   async init(): Promise<void> {
     // Tighten nut-js defaults (mirrors Windows path in legacy code).
@@ -96,6 +113,25 @@ export class LinuxAdapter implements PlatformAdapter {
       this.wayland = await WaylandBackend.detect(name => this.hasBinary(name));
     }
 
+    // Probe the AT-SPI bridge (Tranche 4b). Two conditions must be met:
+    // python3 must be on PATH, AND `from gi.repository import Atspi` must
+    // succeed (requires python3-gi + gir1.2-atspi-2.0). We run the probe
+    // with a short timeout so boots stay snappy when neither is installed.
+    this.atspiScript = path.resolve(__dirname, '..', '..', '..', 'scripts', 'linux', 'atspi-bridge.py');
+    if (await this.hasBinary('python3')) {
+      try {
+        await execFileAsync(
+          'python3',
+          ['-c', 'import gi; gi.require_version("Atspi","2.0"); from gi.repository import Atspi'],
+          { timeout: 2_000 },
+        );
+        this.atspiAvailable = true;
+      } catch {
+        // Probe failed — gi.repository.Atspi isn't installed. Keep stubs.
+        this.atspiAvailable = false;
+      }
+    }
+
     // Pre-warm screen size so first capture is fast.
     await this.getScreenSize().catch(() => null);
   }
@@ -107,15 +143,17 @@ export class LinuxAdapter implements PlatformAdapter {
   // ─── PERMISSIONS ──────────────────────────────────────────────────
 
   async checkPermissions(): Promise<PermissionStatus> {
-    // X11: implicit user-level access. Wayland: synthetic-input APIs are
-    // blocked by compositors unless the user runs ydotool (kernel uinput
-    // daemon) or we go through the portal. Accessibility stays false until
-    // the AT-SPI bridge lands.
+    // X11: implicit user-level input access. Wayland: synthetic-input APIs
+    // are blocked by compositors unless the user runs ydotool (kernel
+    // uinput daemon).
+    // Accessibility: now reflects whether the AT-SPI bridge (Tranche 4b)
+    // is available — true when python3 + python3-gi + gir1.2-atspi-2.0
+    // are installed and the probe at init() succeeded.
     if (this.environment === 'wayland') {
       const canInject = await this.hasBinary('ydotool');
-      return { input: canInject, accessibility: false, screenRecording: true };
+      return { input: canInject, accessibility: this.atspiAvailable, screenRecording: true };
     }
-    return { input: true, accessibility: false, screenRecording: true };
+    return { input: true, accessibility: this.atspiAvailable, screenRecording: true };
   }
 
   async requestPermissions(): Promise<PermissionStatus> {
@@ -509,21 +547,66 @@ export class LinuxAdapter implements PlatformAdapter {
   }
 
   // ─── ACCESSIBILITY ────────────────────────────────────────────────
-  // AT-SPI D-Bus bridge is not yet implemented — return safe empties.
-  // Tranche 4b tracks the full AT-SPI bridge. Until then, these stubs
-  // return graceful empty/not-supported responses so MCP tools that hit
-  // a11y paths on Linux don't crash — they just find nothing.
+  //
+  // Tranche 4b — AT-SPI D-Bus bridge (READ-ONLY first pass).
+  //
+  // When the bridge is available (python3 + python3-gi + Atspi), we
+  // spawn `atspi-bridge.py` to answer getUiTree / findElements /
+  // getFocusedElement / waitForElement. The script emits JSON with the
+  // same UiElement shape used on Windows / macOS.
+  //
+  // `invokeElement` stays stubbed — action dispatch (click / focus /
+  // set-value / expand / ...) needs per-role handling via AT-SPI's
+  // Action / EditableText / Value interfaces. Scoped out of this pass
+  // so we can land READ support for Linux now and iterate. When the
+  // bridge isn't available, every method falls back to the same safe
+  // empty responses as before — zero regression on boxes without AT-SPI.
 
-  async getUiTree(_processId?: number): Promise<UiElement[]> {
-    return [];
+  async getUiTree(processId?: number): Promise<UiElement[]> {
+    if (!this.atspiAvailable) return [];
+    try {
+      const args = ['--cmd', 'get-tree'];
+      if (typeof processId === 'number') args.push('--process-id', String(processId));
+      const { stdout } = await execFileAsync('python3', [this.atspiScript, ...args], {
+        timeout: A11Y_TIMEOUT_MS,
+      });
+      const data = JSON.parse(stdout) as { elements?: any[] };
+      const raw = Array.isArray(data.elements) ? data.elements : [];
+      return raw.map(this.normalizeAtspiElement);
+    } catch {
+      return [];
+    }
   }
 
-  async findElements(_query: { name?: string; controlType?: string; processId?: number }): Promise<UiElement[]> {
-    return [];
+  async findElements(query: { name?: string; controlType?: string; processId?: number }): Promise<UiElement[]> {
+    if (!this.atspiAvailable) return [];
+    try {
+      const args = ['--cmd', 'find'];
+      if (query.name) args.push('--name', query.name);
+      if (query.controlType) args.push('--role', query.controlType);
+      if (typeof query.processId === 'number') args.push('--process-id', String(query.processId));
+      const { stdout } = await execFileAsync('python3', [this.atspiScript, ...args], {
+        timeout: A11Y_TIMEOUT_MS,
+      });
+      const data = JSON.parse(stdout) as { elements?: any[] };
+      const raw = Array.isArray(data.elements) ? data.elements : [];
+      return raw.map(this.normalizeAtspiElement);
+    } catch {
+      return [];
+    }
   }
 
   async getFocusedElement(): Promise<UiElement | null> {
-    return null;
+    if (!this.atspiAvailable) return null;
+    try {
+      const { stdout } = await execFileAsync('python3', [this.atspiScript, '--cmd', 'focused'], {
+        timeout: A11Y_TIMEOUT_MS,
+      });
+      const data = JSON.parse(stdout) as { element?: any };
+      return data.element ? this.normalizeAtspiElement(data.element) : null;
+    } catch {
+      return null;
+    }
   }
 
   async invokeElement(_query: {
@@ -537,13 +620,48 @@ export class LinuxAdapter implements PlatformAdapter {
     bounds?: { x: number; y: number; width: number; height: number };
     data?: Record<string, unknown>;
   }> {
+    // Action dispatch is the next AT-SPI step — needs per-role AT-SPI
+    // Action / Value / EditableText interface handling. Until then,
+    // Linux agents use getUiTree + coord click as a coarse fallback.
     return { success: false };
   }
 
-  async waitForElement(_query: WaitForElementQuery, _timeoutMs: number): Promise<UiElement | null> {
-    // Without AT-SPI we have no a11y tree to poll against.
+  async waitForElement(query: WaitForElementQuery, timeoutMs: number): Promise<UiElement | null> {
+    if (!this.atspiAvailable) return null;
+    const interval = query.intervalMs ?? 250;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const hits = await this.findElements({
+        name: query.name, controlType: query.controlType, processId: query.processId,
+      });
+      if (hits.length > 0) return hits[0];
+      await this.delay(interval);
+    }
     return null;
   }
+
+  /**
+   * Normalize one element record from the Python bridge into the shared
+   * UiElement shape used by the Windows + macOS adapters. Missing bounds
+   * default to zero; missing state flags pass through as undefined.
+   */
+  private normalizeAtspiElement = (raw: any): UiElement => {
+    const enabled = typeof raw?.enabled === 'boolean' ? raw.enabled : undefined;
+    return {
+      name: raw?.name ?? '',
+      controlType: raw?.controlType ?? '',
+      bounds: raw?.bounds ?? { x: 0, y: 0, width: 0, height: 0 },
+      value: typeof raw?.value === 'string' ? raw.value : undefined,
+      enabled,
+      focused: raw?.focused,
+      selected: raw?.selected,
+      disabled: enabled === false ? true : undefined,
+      busy: raw?.busy,
+      offscreen: raw?.offscreen,
+      automationId: raw?.automationId ?? undefined,
+      processId: typeof raw?.processId === 'number' ? raw.processId : undefined,
+    };
+  };
 
   // ─── INPUT (mouse) ────────────────────────────────────────────────
 
