@@ -132,6 +132,29 @@ const TOOL_TIER: Record<string, Tier> = {
   'done': 'read',
   'give_up': 'read',
   'cannot_read': 'read',
+  // Tranche 1B — new MCP tools (extras.ts)
+  'mouse_move_relative': 'input',
+  'mouse_middle_click': 'input',
+  'mouse_triple_click': 'input',
+  'mouse_down': 'input',
+  'mouse_up': 'input',
+  'mouse_scroll_horizontal': 'input',
+  'mouse_drag_stepped': 'input',
+  'key_down': 'input',
+  'key_up': 'input',
+  'maximize_window': 'input',
+  'minimize_window_to_taskbar': 'input',
+  'restore_window': 'input',
+  'close_window': 'destructive',    // polite request, but the user may not want this on autopilot
+  'resize_window': 'input',
+  'list_displays': 'read',
+  'focus_element': 'input',
+  'wait_for_element': 'read',
+  'open_file': 'input',
+  'open_url': 'input',
+  'get_system_time': 'read',
+  'switch_tab_os': 'input',
+  'undo_last': 'input',
 };
 
 /**
@@ -177,6 +200,13 @@ export function evaluate(ctx: EvaluationContext): Decision {
   // 4. System tier: always confirm (catch-all).
   if (tier === 'system') {
     return emit({ decision: 'confirm', tier, reason: `${ctx.tool} is a system-tier action` });
+  }
+
+  // 4b. Destructive tier: confirm. Matches the tool-registry tag for
+  //     explicitly-destructive verbs (close_window, etc.) so the gate
+  //     fires even when there's no label match.
+  if (tier === 'destructive') {
+    return emit({ decision: 'confirm', tier, reason: `${ctx.tool} is a destructive-tier action` });
   }
 
   // 5. Input tier with a Confirm-pattern target label.

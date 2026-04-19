@@ -12,6 +12,7 @@ import { getOrchestrationTools } from './orchestration';
 import { getShortcutTools } from './shortcuts';
 import { getOcrTools } from './ocr';
 import { getSmartTools } from './smart';
+import { getExtraTools } from './extras';
 import type { ToolDefinition, ToolContext, ToolResult } from './types';
 import { toOpenAiFunctions, toJsonSchema } from './types';
 
@@ -28,6 +29,7 @@ export function getAllTools(): ToolDefinition[] {
     ...getShortcutTools(),
     ...getOcrTools(),
     ...getSmartTools(),
+    ...getExtraTools(),
   ];
 }
 

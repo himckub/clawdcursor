@@ -192,6 +192,28 @@
       }
     },
     {
+      "name": "close_window",
+      "description": "Polite close request — the app receives WM_CLOSE / AXCloseAction / _NET_CLOSE_WINDOW and may prompt (\"Save changes?\") or refuse. Returns when the request was posted, NOT when the window actually closed.",
+      "category": "window",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "processName": {
+            "type": "string",
+            "description": "Optional process name match"
+          },
+          "processId": {
+            "type": "number",
+            "description": "Optional process id match"
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional title-substring match"
+          }
+        }
+      }
+    },
+    {
       "name": "delegate_to_agent",
       "description": "Delegate a task to clawdcursor's autonomous pipeline (runs independently with its own LLM reasoning). Returns when the task completes or times out.",
       "category": "orchestration",
@@ -280,6 +302,31 @@
       }
     },
     {
+      "name": "focus_element",
+      "description": "Put keyboard focus on a UI element by accessibility name. Does NOT raise the window — use focus_window first if you also need the window in the foreground. Returns not_supported_on_platform on Linux (AT-SPI bridge pending).",
+      "category": "perception",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Accessibility name of the element"
+          },
+          "controlType": {
+            "type": "string",
+            "description": "Optional role filter (Button, Edit, etc.)"
+          },
+          "processId": {
+            "type": "number",
+            "description": "Optional process id to scope the search"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
       "name": "focus_window",
       "description": "Bring a window to the foreground. Matches by process name, PID, or title substring. Verifies focus after attempt.",
       "category": "window",
@@ -322,6 +369,15 @@
     {
       "name": "get_screen_size",
       "description": "Get the screen dimensions and scale factor.",
+      "category": "perception",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "get_system_time",
+      "description": "Return the current system time as ISO 8601 UTC + local components. Zero I/O.",
       "category": "perception",
       "parameters": {
         "type": "object",
@@ -380,6 +436,23 @@
       }
     },
     {
+      "name": "key_down",
+      "description": "Press a key (or modifier) without releasing. Pair with key_up. Enables hold-modifier-while-click or chord-hold workflows. Accepts the same tokens as key_press (\"shift\", \"Return\", \"F5\", etc.).",
+      "category": "keyboard",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Key token (e.g. \"shift\", \"ctrl\", \"a\", \"Return\")"
+          }
+        },
+        "required": [
+          "key"
+        ]
+      }
+    },
+    {
       "name": "key_press",
       "description": "Press a keyboard key or key combination. Use \"+\" for combos (e.g. \"ctrl+s\", \"shift+enter\", \"alt+tab\"). Single keys: \"Return\", \"Tab\", \"Escape\", \"Backspace\", \"Delete\", \"F1\"-\"F12\", \"Left/Right/Up/Down\".",
       "category": "keyboard",
@@ -394,6 +467,54 @@
         "required": [
           "key"
         ]
+      }
+    },
+    {
+      "name": "key_up",
+      "description": "Release a key previously pressed with key_down. No-op if not currently down.",
+      "category": "keyboard",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Key token"
+          }
+        },
+        "required": [
+          "key"
+        ]
+      }
+    },
+    {
+      "name": "list_displays",
+      "description": "Enumerate all connected displays with logical bounds, physical size, DPI ratio, and primary flag. Use this before desktop_screenshot with displayIndex to target a specific monitor.",
+      "category": "window",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "maximize_window",
+      "description": "Maximize the foreground window (or a specific window matched by processName/title). Polite request — the OS window manager may snap to the full working area.",
+      "category": "window",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "processName": {
+            "type": "string",
+            "description": "Optional process name match"
+          },
+          "processId": {
+            "type": "number",
+            "description": "Optional process id match"
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional title-substring match"
+          }
+        }
       }
     },
     {
@@ -414,6 +535,28 @@
           "title": {
             "type": "string",
             "description": "Window title substring to match"
+          }
+        }
+      }
+    },
+    {
+      "name": "minimize_window_to_taskbar",
+      "description": "Minimize a window (hide to taskbar/Dock). Counterpart to the existing `minimize_window` in a11y.ts but routed through the OS-agnostic PlatformAdapter and accepts explicit target queries.",
+      "category": "window",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "processName": {
+            "type": "string",
+            "description": "Optional process name match"
+          },
+          "processId": {
+            "type": "number",
+            "description": "Optional process id match"
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional title-substring match"
           }
         }
       }
@@ -460,6 +603,25 @@
           "x",
           "y"
         ]
+      }
+    },
+    {
+      "name": "mouse_down",
+      "description": "Press a mouse button without releasing. Pair with mouse_up. Useful for hold-and-drag gestures, modifier-click selections, or chord input.",
+      "category": "mouse",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "button": {
+            "type": "string",
+            "description": "Which button (default: left)",
+            "enum": [
+              "left",
+              "right",
+              "middle"
+            ]
+          }
+        }
       }
     },
     {
@@ -511,6 +673,23 @@
       }
     },
     {
+      "name": "mouse_drag_stepped",
+      "description": "Drag the mouse along a multi-point path in image-space. Path is a JSON string of {x,y} points. Useful for Paint-style drawing or gesture input. Press occurs at the first point and release at the last.",
+      "category": "mouse",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "JSON array of {\"x\":n, \"y\":n} points in image-space, min 2 points"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
       "name": "mouse_hover",
       "description": "Move the mouse to the given image-space coordinates without clicking. Useful for revealing tooltips or hover menus.",
       "category": "mouse",
@@ -529,6 +708,50 @@
         "required": [
           "x",
           "y"
+        ]
+      }
+    },
+    {
+      "name": "mouse_middle_click",
+      "description": "Middle-click (wheel-click) at image-space (x, y). Opens links in new tab in most browsers; pans in some apps.",
+      "category": "mouse",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number",
+            "description": "X coordinate in image-space"
+          },
+          "y": {
+            "type": "number",
+            "description": "Y coordinate in image-space"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ]
+      }
+    },
+    {
+      "name": "mouse_move_relative",
+      "description": "Move the cursor by a relative offset (dx, dy) in image-space pixels. Useful for drawing on a canvas or adjusting a selection. On Wayland where cursor-query APIs are blocked, uses the last known position.",
+      "category": "mouse",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dx": {
+            "type": "number",
+            "description": "X offset in image-space pixels"
+          },
+          "dy": {
+            "type": "number",
+            "description": "Y offset in image-space pixels"
+          }
+        },
+        "required": [
+          "dx",
+          "dy"
         ]
       }
     },
@@ -591,6 +814,83 @@
       }
     },
     {
+      "name": "mouse_scroll_horizontal",
+      "description": "Scroll horizontally at image-space (x, y). On Windows uses Shift+wheel synthesis; on Linux uses xdotool wheel buttons when available; on macOS uses Shift+wheel.",
+      "category": "mouse",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number",
+            "description": "X coordinate in image-space"
+          },
+          "y": {
+            "type": "number",
+            "description": "Y coordinate in image-space"
+          },
+          "direction": {
+            "type": "string",
+            "description": "Scroll direction",
+            "enum": [
+              "left",
+              "right"
+            ]
+          },
+          "amount": {
+            "type": "number",
+            "description": "Wheel ticks (default: 3)",
+            "default": 3
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "direction"
+        ]
+      }
+    },
+    {
+      "name": "mouse_triple_click",
+      "description": "Triple-click the left mouse button at image-space (x, y) — selects a paragraph in most text editors.",
+      "category": "mouse",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number",
+            "description": "X coordinate in image-space"
+          },
+          "y": {
+            "type": "number",
+            "description": "Y coordinate in image-space"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ]
+      }
+    },
+    {
+      "name": "mouse_up",
+      "description": "Release a mouse button previously pressed with mouse_down. No-op if nothing is held.",
+      "category": "mouse",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "button": {
+            "type": "string",
+            "description": "Which button (default: left)",
+            "enum": [
+              "left",
+              "right",
+              "middle"
+            ]
+          }
+        }
+      }
+    },
+    {
       "name": "navigate_browser",
       "description": "Open a URL in the browser. Launches with CDP enabled (port 9223) for DOM interaction. Call cdp_connect after.",
       "category": "orchestration",
@@ -634,6 +934,40 @@
       }
     },
     {
+      "name": "open_file",
+      "description": "Open a file or folder in the OS default application. Uses `open` (macOS), `xdg-open` (Linux), and explorer / ShellExecute (Windows).",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute filesystem path"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "open_url",
+      "description": "Open a URL in the OS default browser. Non-browser-agnostic counterpart to navigate_browser.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "https:// or http:// URL"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
       "name": "read_clipboard",
       "description": "Read the current text content of the OS clipboard.",
       "category": "clipboard",
@@ -652,6 +986,66 @@
           "processId": {
             "type": "number",
             "description": "Focus on a specific process ID (optional — reads foreground window by default)"
+          }
+        }
+      }
+    },
+    {
+      "name": "resize_window",
+      "description": "Set a window's logical-pixel bounds. Pass only the dimensions you want to change; omitted fields preserve the current value. Coordinates are logical pixels — top-left origin.",
+      "category": "window",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number",
+            "description": "New X (top-left origin, logical px)"
+          },
+          "y": {
+            "type": "number",
+            "description": "New Y (top-left origin, logical px)"
+          },
+          "width": {
+            "type": "number",
+            "description": "New width in logical px"
+          },
+          "height": {
+            "type": "number",
+            "description": "New height in logical px"
+          },
+          "processName": {
+            "type": "string",
+            "description": "Optional process name match"
+          },
+          "processId": {
+            "type": "number",
+            "description": "Optional process id match"
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional title-substring match"
+          }
+        }
+      }
+    },
+    {
+      "name": "restore_window",
+      "description": "Restore a minimized or maximized window back to its previous bounds. Use this to bring a hidden window back without toggling into fullscreen.",
+      "category": "window",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "processName": {
+            "type": "string",
+            "description": "Optional process name match"
+          },
+          "processId": {
+            "type": "number",
+            "description": "Optional process id match"
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional title-substring match"
           }
         }
       }
@@ -783,6 +1177,30 @@
       }
     },
     {
+      "name": "switch_tab_os",
+      "description": "Cycle or jump to a browser tab using the OS-agnostic keyboard shortcut (mod+Tab / mod+Shift+Tab / mod+{1..9}). Works in Chrome, Firefox, Edge, Safari. For in-browser DOM-level control use cdp_switch_tab.",
+      "category": "window",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "number",
+            "description": "Jump to tab N (1-based, 1-9). If omitted, direction must be provided.",
+            "minimum": 1,
+            "maximum": 9
+          },
+          "direction": {
+            "type": "string",
+            "description": "Cycle \"next\" or \"previous\". Ignored when `index` is given.",
+            "enum": [
+              "next",
+              "previous"
+            ]
+          }
+        }
+      }
+    },
+    {
       "name": "type_text",
       "description": "Type text into the currently focused element via clipboard paste (reliable, no dropped chars).",
       "category": "keyboard",
@@ -797,6 +1215,15 @@
         "required": [
           "text"
         ]
+      }
+    },
+    {
+      "name": "undo_last",
+      "description": "Emit the OS-specific Undo shortcut (Ctrl+Z on Win/Linux, Cmd+Z on macOS) into the focused window.",
+      "category": "keyboard",
+      "parameters": {
+        "type": "object",
+        "properties": {}
       }
     },
     {
@@ -816,6 +1243,38 @@
         "required": [
           "seconds"
         ]
+      }
+    },
+    {
+      "name": "wait_for_element",
+      "description": "Poll the accessibility tree until an element appears or timeout elapses. Useful after an action that triggers a dialog or side panel. Returns not_supported_on_platform on Linux (AT-SPI bridge pending).",
+      "category": "perception",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Accessibility name to match"
+          },
+          "controlType": {
+            "type": "string",
+            "description": "Role filter (e.g. \"Button\")"
+          },
+          "processId": {
+            "type": "number",
+            "description": "Scope the search to a process"
+          },
+          "timeoutMs": {
+            "type": "number",
+            "description": "Max wait in milliseconds (default 5000)",
+            "default": 5000
+          },
+          "intervalMs": {
+            "type": "number",
+            "description": "Poll interval in ms (default 250)",
+            "default": 250
+          }
+        }
       }
     },
     {

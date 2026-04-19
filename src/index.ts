@@ -317,10 +317,17 @@ program
     try {
       const { createToolServer } = await import('./tool-server');
       const { requireAuth } = await import('./server');
+      const { getPlatform } = await import('./v2/platform');
+      // Resolve the platform adapter eagerly — the unified pipeline already
+      // uses it, so reusing the same instance keeps OS state consistent
+      // between the agent and the tool-direct surface.
+      let startPlatform: import('./v2/platform/types').PlatformAdapter | undefined;
+      try { startPlatform = await getPlatform(); } catch { /* non-fatal */ }
       const toolCtx = {
         desktop: agent.getDesktop(),
         a11y: (agent as any).a11y,
         cdp: (agent as any).cdpDriver,
+        platform: startPlatform,
         getMouseScaleFactor: () => 1,  // start command uses agent's own scaling
         getScreenshotScaleFactor: () => agent.getDesktop().getScaleFactor(),
         ensureInitialized: async () => {},  // agent already initialized
@@ -902,10 +909,14 @@ async function createToolContext() {
   const { CDPDriver } = await import('./cdp-driver');
   const { DEFAULT_CONFIG } = await import('./types');
   const { DEFAULT_CDP_PORT } = await import('./browser-config');
+  const { getPlatform } = await import('./v2/platform');
 
   const desktop = new NativeDesktop({ ...DEFAULT_CONFIG });
   const a11y = new AccessibilityBridge();
   const cdp = new CDPDriver(DEFAULT_CDP_PORT);
+  // Lazy adapter handle — Tranche 1A primitives run through this. Populated
+  // in ensureInitialized so we share the same adapter the unified pipeline uses.
+  let platform: import('./v2/platform/types').PlatformAdapter | undefined;
 
   let initialized = false;
   let initPromise: Promise<void> | null = null;
@@ -917,6 +928,7 @@ async function createToolContext() {
     if (initPromise) return initPromise;
     initPromise = (async () => {
       await desktop.connect();
+      platform = await getPlatform();
       screenshotScaleFactor = desktop.getScaleFactor();
       try {
         const { execFileSync } = await import('child_process');
@@ -951,6 +963,7 @@ async function createToolContext() {
 
   return {
     desktop, a11y, cdp,
+    get platform() { return platform; },
     getMouseScaleFactor: () => mouseScaleFactor,
     getScreenshotScaleFactor: () => screenshotScaleFactor,
     ensureInitialized,
