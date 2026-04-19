@@ -14,6 +14,7 @@ import { getOcrTools } from './ocr';
 import { getSmartTools } from './smart';
 import { getExtraTools } from './extras';
 import { getA11yDepthTools } from './a11y_depth';
+import { getElectronBridgeTools } from './electron_bridge';
 import { getCompactTools } from './compact';
 import type { ToolDefinition, ToolContext, ToolResult } from './types';
 import { toOpenAiFunctions, toJsonSchema } from './types';
@@ -34,6 +35,7 @@ export function getAllTools(): ToolDefinition[] {
     ...getSmartTools(),
     ...getExtraTools(),
     ...getA11yDepthTools(),
+    ...getElectronBridgeTools(),
   ];
 }
 

@@ -1,6 +1,6 @@
 ---
 name: clawdcursor
-version: 0.8.1-alpha.0
+version: 0.8.2
 description: >
   The skill that gives AI agents eyes, hands, and ears on a real desktop.
   When the user asks you to do something a human would normally do at their
@@ -60,6 +60,13 @@ metadata:
 ---
 
 ## The easiest path — one tool, natural-language task (START HERE)
+
+> **If you are an LLM reading this: YOU SHOULD BE USING COMPACT MODE.**
+>
+> - MCP clients: add `"args": ["mcp", "--compact"]` to your config.
+> - REST clients: use `GET /tools?mode=compact` and `POST /execute/{compound}` with an `action` enum.
+>
+> Granular mode's 72 tools are kept for back-compat. Compact's 6 tools are ~12× smaller and reduce mis-tool-selection. Use granular only if your runtime MUST have every primitive as its own top-level schema.
 
 If you connect via MCP with `--compact`, or hit REST's compact mode, you get a
 single tool that takes the whole task:
@@ -121,6 +128,13 @@ than the granular surface — so small models (Haiku, Kimi, Ollama) stay focused
 
 **I want to press a keyboard shortcut:**
 - `computer({"action":"key","combo":"mod+s"})` — `mod` auto-resolves to Cmd on macOS, Ctrl elsewhere.
+
+**I want to draw a curve / freehand path (one continuous stroke):**
+- `computer({"action":"drag_path","path":"[{\"x\":100,\"y\":100},{\"x\":120,\"y\":110},...]"})`
+  The path is a JSON array of `{x, y}` points. The mouse button stays held for the entire path — one continuous stroke, not a series of disconnected drags. **Use this for drawing in Paint / Figma / any canvas app.** `mouse_drag` alone (start → end) gives you a straight line; `drag_path` gives you curves.
+
+**The web app is eating my Escape / keyboard events:**
+- Web-wrapped apps (New Outlook, Teams, Gmail, Notion) treat Escape as "close this dialog/modal" — often closing the entire compose window. **Do NOT send Escape to dismiss autocomplete suggestions in web apps.** Use arrow keys (Up/Down to navigate the dropdown, Enter to pick), or click somewhere neutral with `computer({"action":"click","x":..,"y":..})` to blur the field.
 
 ---
 
@@ -219,7 +233,7 @@ All POST endpoints require `Authorization: Bearer <token>` — token at
 GET  /tools                  → 72 granular schemas (OpenAI function-calling)
 GET  /tools?mode=compact     → 6 compound schemas (recommended for LLMs)
 POST /execute/{name}         → run any tool by name — granular or compact
-GET  /health                 → {"status":"ok","version":"0.8.1-alpha.0"}
+GET  /health                 → {"status":"ok","version":"0.8.2"}
 GET  /docs                   → full docs for the granular surface
 GET  /docs?mode=compact      → docs for the compact surface
 ```
@@ -401,12 +415,15 @@ Per-OS setup notes:
 | Problem | Fix |
 |---|---|
 | Port 3847 not responding | `clawdcursor serve` — wait 2s — `GET /health` |
-| 401 Unauthorized | Read fresh `~/.clawdcursor/token` |
-| Empty a11y tree | App is custom-canvas (Figma, Paint, games) — escalate to `computer({"action":"screenshot"})` + coord clicks, or `system({"action":"ocr"})` |
-| "Element not found" on invoke | The element isn't on-screen or has no a11y name. Read the tree first; if empty, fall back to coord click |
-| Action runs but nothing happens | Wrong window has focus. `window({"action":"active"})` then `window({"action":"focus",...})` before retrying |
-| Mouse clicks land in wrong place | DPI / scaling — don't pre-scale. Pass image-space coords from the most recent screenshot exactly as returned |
-| CDP not connecting | Browser not launched with remote debugging. Use `window({"action":"navigate","url":...})` which auto-enables it |
+| 401 Unauthorized (mid-session, unexpectedly) | v0.8.2+ auto-accepts the current on-disk token AND the one this process started with, so this should no longer happen. If you still see it, `clawdcursor stop && clawdcursor serve` — another process rotated the token file. |
+| Empty a11y tree on a *native-looking* app | It's probably **Electron or WebView2** — olk (New Outlook), Teams, Discord, Slack, VS Code, Notion, Obsidian all render inside Chromium. Call `system({"action":"detect_webview"})` to confirm + get a relaunch-with-CDP hint. Once relaunched with `--remote-debugging-port=9222`, attach via `browser({"action":"connect"})` and you get the full DOM. |
+| Empty a11y tree on a *truly* custom-canvas app | Real canvas apps (Paint, Figma, games). Escalate to `computer({"action":"screenshot"})` + coord clicks, or `system({"action":"ocr"})` to read visible text with bounds. |
+| "Element not found" on invoke | The element isn't on-screen or has no a11y name. Read the tree first; if sparse, check `system({"action":"detect_webview"})` before falling back to coord click. |
+| Action runs but nothing happens | Wrong window has focus. `window({"action":"active"})` then `window({"action":"focus",...})` before retrying. v0.8.2 `focus_window` force-raises through Windows' foreground lock — if it still doesn't work, the target is likely minimized in a different virtual desktop. |
+| Mouse clicks land in wrong place | DPI / scaling — don't pre-scale. Pass image-space coords from the most recent screenshot exactly as returned. |
+| CDP not connecting | Browser not launched with remote debugging. Use `window({"action":"navigate","url":...})` (auto-enables it) — or for a running app already, `system({"action":"relaunch_with_cdp","appName":"..."})`. |
+| Drag draws disconnected line segments | You're using `mouse_drag` (start → end, one line). For continuous curves or multi-point strokes, use `computer({"action":"drag_path","path":"[{\"x\":...,\"y\":...},...]"})` — holds the button for the entire path. |
+| Tool call returns "Missing required parameter" | v0.8.2+ error messages include the full expected signature. Read the error carefully — the `Expected: toolName(a: number, b?: string)` part tells you exactly what's required. |
 
 ---
 
@@ -420,4 +437,12 @@ Per-OS setup notes:
 
 ---
 
-**What's new in 0.8.1-alpha.0:** unified blind/hybrid/vision agent (one loop, three modes), compact MCP surface (`--compact`, 6 tools, ~1.5k tokens — Anthropic Computer-Use style), Linux AT-SPI bridge (read-only), Wayland input routing via `ydotool`/`wtype`, cross-OS PlatformAdapter verified on Windows 11 + macOS 14 + Ubuntu 24. Model-agnostic (Claude, GPT, Gemini, Llama, Kimi, Ollama) over REST or MCP.
+**What's new in 0.8.2:**
+- **Silent-401 auth bug fixed** — `requireAuth` now accepts the on-disk token with an mtime cache so concurrent clawdcursor processes no longer cause mid-session 401s.
+- **Force-focus-window** — Windows `focus_window` now uses the `AttachThreadInput` + `AllowSetForegroundWindow` + topmost-toggle sequence to raise windows across foreground lock.
+- **Electron/WebView2 detection** — new `system({"action":"detect_webview"})` and `system({"action":"relaunch_with_cdp"})` (granular: `detect_webview_apps`, `relaunch_with_cdp`). Auto-spots olk / Teams / Discord / Slack / VS Code / Notion / Obsidian and hints how to bridge them via CDP instead of the sparse UIA tree.
+- **Richer validation errors** — every REST rejection now includes the full expected tool signature, e.g. `Expected smart_click(target: string, processId?: number)`.
+- **Better drawing support** — `mouse_drag_stepped` / `computer({"action":"drag_path"})` documented clearly for freehand curves (Paint, Figma, canvas apps).
+- **SKILL.md polish** — harder push to compact mode, Escape-in-web-apps warning, a11y-empty troubleshooting split between Electron and true-canvas cases.
+
+**0.8.1 features (now stable in 0.8.2):** unified blind/hybrid/vision agent (one loop, three modes), compact MCP surface (`--compact`, 6 tools, ~1.5k tokens — Anthropic Computer-Use style), Linux AT-SPI bridge (read-only), Wayland input routing via `ydotool`/`wtype`, cross-OS PlatformAdapter verified on Windows 11 + macOS 14 + Ubuntu 24. Model-agnostic (Claude, GPT, Gemini, Llama, Kimi, Ollama) over REST or MCP.

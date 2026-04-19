@@ -164,6 +164,9 @@ const TOOL_TIER: Record<string, Tier> = {
   'a11y_get_value': 'read',
   'get_element_state': 'read',
   'a11y_list_children': 'read',
+  // v0.8.2 — Electron/WebView2 bridge tools
+  'detect_webview_apps': 'read',
+  'relaunch_with_cdp': 'destructive',  // closes the app — app may prompt to save
   // Tranche 3 — compact compound MCP surface. When an agent calls one of
   // these, the real action is decided by the `action` arg (already
   // unpacked above via unpackCompoundTool for the unified-agent compound
@@ -227,6 +230,9 @@ function unpackCompoundTool(tool: string, args: Record<string, unknown>): string
       system_time: 'get_system_time', ocr: 'ocr_read_screen', undo: 'undo_last',
       shortcuts_list: 'shortcuts_list', shortcuts_run: 'shortcuts_execute',
       delegate: 'delegate_to_agent',
+      // v0.8.2
+      detect_webview: 'detect_webview_apps',
+      relaunch_with_cdp: 'relaunch_with_cdp',
     },
     browser: {
       connect: 'cdp_connect', page_context: 'cdp_page_context', read_text: 'cdp_read_text',

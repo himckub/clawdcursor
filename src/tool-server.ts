@@ -18,26 +18,47 @@ import type { ToolContext } from './tools';
 import type { ToolDefinition } from './tools/types';
 import { VERSION } from './version';
 
+/**
+ * Render a tool's parameter schema as a compact human-readable signature,
+ * e.g. `(x: number, y: number, button?: string)`. Used inside error
+ * responses so an agent never has to go back to `/docs` just to learn
+ * what params a tool takes.
+ */
+function renderSignature(tool: ToolDefinition): string {
+  const entries = Object.entries(tool.parameters);
+  if (entries.length === 0) return '(no parameters)';
+  const parts = entries.map(([name, def]) => {
+    const optional = def.required === false ? '?' : '';
+    const typ = def.enum ? def.enum.map(e => JSON.stringify(e)).join('|') : def.type;
+    return `${name}${optional}: ${typ}`;
+  });
+  return `(${parts.join(', ')})`;
+}
+
 /** Validate request body against a tool's parameter schema. Returns error string or null. */
 function validateParams(body: Record<string, unknown>, tool: ToolDefinition): string | null {
   const params = tool.parameters;
+  const sig = renderSignature(tool);
   for (const [name, def] of Object.entries(params)) {
     const value = body[name];
     if (def.required !== false && value === undefined) {
-      return `Missing required parameter: "${name}"`;
+      return `Missing required parameter "${name}". Expected ${tool.name}${sig}.`;
     }
     if (value !== undefined) {
       const expected = def.type;
       const actual = typeof value;
-      if (expected === 'number' && actual !== 'number') return `Parameter "${name}" must be a number, got ${actual}`;
-      if (expected === 'string' && actual !== 'string') return `Parameter "${name}" must be a string, got ${actual}`;
-      if (expected === 'boolean' && actual !== 'boolean') return `Parameter "${name}" must be a boolean, got ${actual}`;
+      if (expected === 'number' && actual !== 'number') return `Parameter "${name}" must be a number, got ${actual}. Expected ${tool.name}${sig}.`;
+      if (expected === 'string' && actual !== 'string') return `Parameter "${name}" must be a string, got ${actual}. Expected ${tool.name}${sig}.`;
+      if (expected === 'boolean' && actual !== 'boolean') return `Parameter "${name}" must be a boolean, got ${actual}. Expected ${tool.name}${sig}.`;
+      if (def.enum && typeof value === 'string' && !def.enum.includes(value)) {
+        return `Parameter "${name}" must be one of [${def.enum.map(v => `"${v}"`).join(', ')}], got "${value}". Expected ${tool.name}${sig}.`;
+      }
     }
   }
   // Reject unknown parameters to catch typos
   for (const key of Object.keys(body)) {
     if (!(key in params)) {
-      return `Unknown parameter: "${key}". Valid: ${Object.keys(params).join(', ') || '(none)'}`;
+      return `Unknown parameter "${key}". Expected ${tool.name}${sig}.`;
     }
   }
   return null;

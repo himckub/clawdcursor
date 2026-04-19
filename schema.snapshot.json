@@ -456,6 +456,15 @@
       }
     },
     {
+      "name": "detect_webview_apps",
+      "description": "Enumerate running Electron / WebView2 / Chromium-shell apps (e.g. New Outlook, Teams, Discord, Slack, VS Code) whose accessibility trees are typically sparse because the UI is rendered inside a web view. Returns each candidate with a CDP-discovery hint — if a remote-debugging port is already live, you can attach to it via `browser({\"action\":\"connect\"})`; otherwise the hint shows the relaunch command the user should run to enable CDP. Use this WHEN `read_screen` returns an unexpectedly empty tree on a \"native\" app.",
+      "category": "perception",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
       "name": "find_element",
       "description": "Search for UI elements by name, control type, or automation ID within a process. Returns matching elements with bounds.",
       "category": "window",
@@ -1193,6 +1202,28 @@
             "description": "Focus on a specific process ID (optional — reads foreground window by default)"
           }
         }
+      }
+    },
+    {
+      "name": "relaunch_with_cdp",
+      "description": "Relaunch a WebView2 / Electron app with a remote-debugging port enabled so `browser` tools can attach. The relaunch closes the existing instance (asks the OS to close politely via window_close first), then starts a new one with `--remote-debugging-port=<port>`. The user MUST consent — this WILL lose any unsaved work in the app. Returns instructions + the new port. Prefer the hint from `detect_webview_apps` when possible.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appName": {
+            "type": "string",
+            "description": "Process name of the app (e.g. \"discord\", \"slack\", \"olk\")"
+          },
+          "port": {
+            "type": "number",
+            "description": "Port to open for CDP. Default 9222.",
+            "default": 9222
+          }
+        },
+        "required": [
+          "appName"
+        ]
       }
     },
     {

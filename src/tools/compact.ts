@@ -126,6 +126,9 @@ const SYSTEM_ACTIONS: ActionRoute[] = [
   { action: 'shortcuts_list',  delegate: 'shortcuts_list' },
   { action: 'shortcuts_run',   delegate: 'shortcuts_execute' },
   { action: 'delegate',        delegate: 'delegate_to_agent' },
+  // v0.8.2 — Electron/WebView2 bridge
+  { action: 'detect_webview',  delegate: 'detect_webview_apps' },
+  { action: 'relaunch_with_cdp', delegate: 'relaunch_with_cdp' },
 ];
 
 const BROWSER_ACTIONS: ActionRoute[] = [
