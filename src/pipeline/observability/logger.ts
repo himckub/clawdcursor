@@ -46,6 +46,53 @@ const prettyMode =
   (isTty && logModeEnv !== 'json' && logModeEnv !== 'off');
 const ttySink = logModeEnv === 'off' ? null : 'stderr' as const;
 
+/**
+ * Timestamp format for the TTY pretty output. Follows Dash0 structured-
+ * logging guidance (ISO 8601 in the machine-readable log, compact local
+ * form for humans):
+ *
+ *   CLAWD_LOG_TIMESTAMPS=short  → HH:MM:SS  (default — local time, compact)
+ *   CLAWD_LOG_TIMESTAMPS=ms     → HH:MM:SS.mmm  (local time, millisecond
+ *                                              precision for tight timing
+ *                                              investigations)
+ *   CLAWD_LOG_TIMESTAMPS=iso    → 2025-04-18T21:23:45.123Z  (full ISO 8601,
+ *                                              matches the file-log field,
+ *                                              useful when piping pretty
+ *                                              output to a ticket / paste)
+ *   CLAWD_LOG_TIMESTAMPS=off    → no timestamp column
+ *
+ * The JSON file log ALWAYS carries a full ISO 8601 `ts` field regardless
+ * of this setting — this only affects the human TTY surface.
+ */
+type TsFormat = 'short' | 'ms' | 'iso' | 'off';
+const tsFormat: TsFormat = (() => {
+  const raw = (process.env.CLAWD_LOG_TIMESTAMPS || '').toLowerCase();
+  if (raw === 'off' || raw === 'none' || raw === 'false') return 'off';
+  if (raw === 'iso')  return 'iso';
+  if (raw === 'ms' || raw === 'millis' || raw === 'millisecond') return 'ms';
+  return 'short';
+})();
+
+function formatTtyTimestamp(d: Date = new Date()): string {
+  if (tsFormat === 'off') return '';
+  if (tsFormat === 'iso') return d.toISOString();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  if (tsFormat === 'ms') {
+    const ms = String(d.getMilliseconds()).padStart(3, '0');
+    return `${hh}:${mm}:${ss}.${ms}`;
+  }
+  return `${hh}:${mm}:${ss}`;
+}
+
+/** Width reserved for the timestamp column so the rest of the line aligns. */
+const TS_WIDTH = tsFormat === 'off' ? 0
+  : tsFormat === 'iso' ? 24
+  : tsFormat === 'ms' ? 12
+  : 8;
+const TS_INDENT = tsFormat === 'off' ? '' : ' '.repeat(TS_WIDTH + 1);
+
 // Color support — unused bytes dropped when NO_COLOR is set.
 const supportsColor =
   isTty &&
@@ -198,6 +245,26 @@ function compactArgs(args: Record<string, unknown> | undefined): string {
 }
 
 /**
+ * Write one pretty-formatted line to the TTY with the standard timestamp
+ * prefix. Every callable line goes through here so the stamp column is
+ * always aligned — callers hand in the already-formatted line body.
+ */
+function writePrettyLine(body: string): void {
+  const ts = formatTtyTimestamp();
+  const prefix = ts ? colorize(ts, C.gray) + ' ' : '';
+  process.stderr.write(`${prefix}${body}\n`);
+}
+
+/**
+ * Write a continuation line that visually belongs to the previous log
+ * entry (e.g. the "run <cid>" row inside the task banner). Pads the
+ * timestamp column with whitespace so everything aligns.
+ */
+function writePrettyContinuation(body: string): void {
+  process.stderr.write(`${TS_INDENT}${body}\n`);
+}
+
+/**
  * TTY pretty-print — renders one visual line (or none, for suppressed events).
  * Never throws; falls back to a raw-ish line if the event isn't recognized.
  */
@@ -239,10 +306,12 @@ function prettyEmit(level: Level, event: string, meta?: Record<string, unknown>)
       ? ` · models ${meta.models}`
       : '';
     const bar = colorize('━'.repeat(72), C.gray);
-    process.stderr.write('\n' + bar + '\n');
-    process.stderr.write(`${colorize('▸ task', C.bold)} ${task}\n`);
-    process.stderr.write(`${colorize('  run', C.dim)}  ${shortCid}${models}\n`);
-    process.stderr.write(bar + '\n');
+    // Blank separator between tasks, then the divider + header rows.
+    process.stderr.write('\n');
+    writePrettyContinuation(bar);
+    writePrettyLine(`${colorize('▸ task', C.bold)} ${task}`);
+    writePrettyContinuation(`${colorize('  run', C.dim)}  ${shortCid}${models}`);
+    writePrettyContinuation(bar);
     return;
   }
 
@@ -252,7 +321,7 @@ function prettyEmit(level: Level, event: string, meta?: Record<string, unknown>)
     const subtasks = Number(meta?.subtasks ?? 0);
     const stratColor = mapStrategyTag(strategy).color;
     const subInfo = subtasks > 0 ? ` · ${subtasks} subtasks` : '';
-    process.stderr.write(`${tagStr} preprocess → ${colorize(strategy, stratColor)}${subInfo} ${colorize(`· ${reason}`, C.dim)}\n`);
+    writePrettyLine(`${tagStr} preprocess → ${colorize(strategy, stratColor)}${subInfo} ${colorize(`· ${reason}`, C.dim)}`);
     return;
   }
 
@@ -262,8 +331,9 @@ function prettyEmit(level: Level, event: string, meta?: Record<string, unknown>)
     const subtask = String(meta?.subtask ?? '');
     taskState.subtaskIndex = idx;
     taskState.subtaskTotal = total;
+    // Blank line between subtasks for visual breathing room.
     process.stderr.write('\n');
-    process.stderr.write(`${tagStr} ${colorize(`▸ subtask ${idx}/${total}`, C.bold)} "${subtask}"\n`);
+    writePrettyLine(`${tagStr} ${colorize(`▸ subtask ${idx}/${total}`, C.bold)} "${subtask}"`);
     return;
   }
 
@@ -276,14 +346,14 @@ function prettyEmit(level: Level, event: string, meta?: Record<string, unknown>)
     taskState.currentPath = strategy === 'router' ? 'router' : 'agent';
     const stratColor = mapStrategyTag(strategy).color;
     const attemptLabel = attempt > 1 ? ` (retry ${attempt})` : '';
-    process.stderr.write(`${tagStr} ↳ ${colorize(strategy, stratColor)}${attemptLabel}\n`);
+    writePrettyLine(`${tagStr} ↳ ${colorize(strategy, stratColor)}${attemptLabel}`);
     return;
   }
 
   if (event === 'pipeline.rung.failed') {
     const strategy = String(meta?.strategy ?? '');
     const reason = String(meta?.reason ?? '');
-    process.stderr.write(`${tagStr} ${colorize('↳ miss', C.yellow)} ${strategy} · ${reason}\n`);
+    writePrettyLine(`${tagStr} ${colorize('↳ miss', C.yellow)} ${strategy} · ${reason}`);
     return;
   }
 
@@ -294,9 +364,10 @@ function prettyEmit(level: Level, event: string, meta?: Record<string, unknown>)
     const durationMs = Number(meta?.durationMs ?? 0);
     const icon = success ? colorize('✅', C.green) : colorize('❌', C.red);
     const bar = colorize('━'.repeat(72), C.gray);
-    process.stderr.write('\n' + bar + '\n');
-    process.stderr.write(`  ${icon} ${colorize(success ? 'done' : 'failed', C.bold)} · path=${pathStr} · $${costUsd.toFixed(4)} · ${formatMs(durationMs)}\n`);
-    process.stderr.write(bar + '\n');
+    process.stderr.write('\n');
+    writePrettyContinuation(bar);
+    writePrettyLine(`  ${icon} ${colorize(success ? 'done' : 'failed', C.bold)} · path=${pathStr} · $${costUsd.toFixed(4)} · ${formatMs(durationMs)}`);
+    writePrettyContinuation(bar);
     return;
   }
 
@@ -304,7 +375,7 @@ function prettyEmit(level: Level, event: string, meta?: Record<string, unknown>)
     const turn = Number(meta?.turn ?? 0);
     const mode = String(meta?.mode ?? taskState.currentMode ?? '');
     taskState.currentMode = (mode === 'blind' || mode === 'hybrid' || mode === 'vision') ? mode : taskState.currentMode;
-    process.stderr.write(`${tagStr} ${colorize(`  turn ${turn}`, C.dim)}\n`);
+    writePrettyLine(`${tagStr} ${colorize(`  turn ${turn}`, C.dim)}`);
     return;
   }
 
@@ -312,7 +383,7 @@ function prettyEmit(level: Level, event: string, meta?: Record<string, unknown>)
     const text = String(meta?.text ?? '').trim();
     if (!text) return;
     const clipped = truncate(text, 140);
-    process.stderr.write(`${tagStr} ${colorize('    think', C.dim)}  ${clipped}\n`);
+    writePrettyLine(`${tagStr} ${colorize('    think', C.dim)}  ${clipped}`);
     return;
   }
 
@@ -325,7 +396,7 @@ function prettyEmit(level: Level, event: string, meta?: Record<string, unknown>)
       ? ` ${colorize(`· safety=${safety.decision}(${safety.tier})`, C.red)}`
       : '';
     taskState.lastSafety = null;
-    process.stderr.write(`${tagStr} ${colorize('    →', C.cyan)} ${colorize(tool, C.bold)}(${argsStr})${safetyInline}\n`);
+    writePrettyLine(`${tagStr} ${colorize('    →', C.cyan)} ${colorize(tool, C.bold)}(${argsStr})${safetyInline}`);
     return;
   }
 
@@ -335,13 +406,13 @@ function prettyEmit(level: Level, event: string, meta?: Record<string, unknown>)
     const ms = Number(meta?.ms ?? 0);
     const mark = success ? colorize('    ✓', C.green) : colorize('    ✗', C.red);
     const latency = colorize(`(${formatMs(ms)})`, C.dim);
-    process.stderr.write(`${tagStr} ${mark} ${truncate(text, 90)} ${latency}\n`);
+    writePrettyLine(`${tagStr} ${mark} ${truncate(text, 90)} ${latency}`);
     return;
   }
 
   if (event === EVENTS.AGENT_STAGNATION) {
     const window = Number(meta?.window ?? 0);
-    process.stderr.write(`${tagStr} ${colorize(`    ⚠ stagnation`, C.yellow)} — last ${window} screens unchanged\n`);
+    writePrettyLine(`${tagStr} ${colorize(`    ⚠ stagnation`, C.yellow)} — last ${window} screens unchanged`);
     return;
   }
 
@@ -349,7 +420,7 @@ function prettyEmit(level: Level, event: string, meta?: Record<string, unknown>)
   if (event === 'safety.decision') {
     const decision = String(meta?.decision ?? '');
     const reason = String(meta?.reason ?? '');
-    process.stderr.write(`${tagStr} ${colorize(`⛔ ${decision}`, C.red)} — ${reason}\n`);
+    writePrettyLine(`${tagStr} ${colorize(`⛔ ${decision}`, C.red)} — ${reason}`);
     return;
   }
 
@@ -357,8 +428,8 @@ function prettyEmit(level: Level, event: string, meta?: Record<string, unknown>)
   if (level === 'warn' || level === 'error') {
     const reason = meta?.reason || meta?.error || meta?.text || '';
     const rest = compactArgs(stripHeaderMeta(meta));
-    const prefix = level === 'error' ? colorize('✗ error', C.red) : colorize('! warn', C.yellow);
-    process.stderr.write(`${tagStr} ${prefix} ${event} ${reason ? `· ${truncate(String(reason), 80)}` : ''}${rest ? ` ${colorize(rest, C.dim)}` : ''}\n`);
+    const levelPrefix = level === 'error' ? colorize('✗ error', C.red) : colorize('! warn', C.yellow);
+    writePrettyLine(`${tagStr} ${levelPrefix} ${event} ${reason ? `· ${truncate(String(reason), 80)}` : ''}${rest ? ` ${colorize(rest, C.dim)}` : ''}`);
     return;
   }
 
@@ -366,7 +437,7 @@ function prettyEmit(level: Level, event: string, meta?: Record<string, unknown>)
 
   // Default info rendering for anything not explicitly handled.
   const rest = compactArgs(stripHeaderMeta(meta));
-  process.stderr.write(`${tagStr} ${event}${rest ? ` ${colorize(rest, C.dim)}` : ''}\n`);
+  writePrettyLine(`${tagStr} ${event}${rest ? ` ${colorize(rest, C.dim)}` : ''}`);
 }
 
 function stripHeaderMeta(meta?: Record<string, unknown>): Record<string, unknown> | undefined {
