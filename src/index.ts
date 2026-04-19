@@ -280,10 +280,9 @@ program
     };
 
     console.log(`\x1b[32m\u2713\x1b[0m \x1b[1mclawdcursor\x1b[0m \x1b[90mv${VERSION}\x1b[0m \x1b[90m\u2014 desktop control active on ${config.server.host}:${config.server.port}\x1b[0m`);
-
-    if (resolvedApi.source === 'external') {
-      console.log(`${e('🔗', '--')} External credentials detected — pipeline config (.clawdcursor-config.json) takes priority`);
-    }
+    // Source-of-credentials banner ("External credentials detected…") was
+    // removed — the per-task header already shows the active model lineup,
+    // and doctor/status report the source explicitly when the user asks.
 
     // ── Agent ──────────────────────────────────────────────────────────────
     //

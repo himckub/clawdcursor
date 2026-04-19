@@ -352,18 +352,23 @@ public class WinAPI {
     const textModel = pipelineConfig?.layer2?.model || this.config.ai.model || 'unavailable';
     const visionModel = pipelineConfig?.layer3?.model || this.config.ai.visionModel || 'unavailable';
 
-    const textProvider = this.inferProviderLabel(
+    // Active-model summary ("🤖 Active models: text=… | vision=…") was
+    // removed — the per-task header prints the live model lineup right
+    // before every task so the startup banner stays short. Provider
+    // labels are still computed below for the legacy computerUse path.
+    void textModel;
+    void visionModel;
+    const _textProvider = this.inferProviderLabel(
       this.config.ai.textApiKey || this.config.ai.apiKey,
       pipelineConfig?.layer2?.baseUrl || this.config.ai.textBaseUrl || this.config.ai.baseUrl,
       pipelineConfig?.providerKey || this.config.ai.provider,
     );
-    const visionProvider = this.inferProviderLabel(
+    const _visionProvider = this.inferProviderLabel(
       this.config.ai.visionApiKey || this.config.ai.apiKey,
       pipelineConfig?.layer3?.baseUrl || this.config.ai.visionBaseUrl || this.config.ai.baseUrl,
       pipelineConfig?.providerKey || this.config.ai.provider,
     );
-
-    console.log(`🤖 Active models: text=${textModel} (${textProvider}) | vision=${visionModel} (${visionProvider})`);
+    void _textProvider; void _visionProvider;
 
     this.browserLayer = new BrowserLayer(this.config, pipelineConfig || {} as PipelineConfig);
     // Browser layer initialized
@@ -386,15 +391,16 @@ public class WinAPI {
     // Use provider capability flag instead of hardcoded provider name check
     const pipelineHasNativeCU = !!pipelineConfig?.provider?.computerUse;
     if (pipelineHasNativeCU && ComputerUseBrain.isSupported(this.config, computerUseOverrides)) {
+      // Legacy Anthropic Computer Use path — only used when --legacy is set.
+      // Startup banner stays quiet about it; the legacy task flow prints
+      // its own heading when it actually runs.
       this.computerUse = new ComputerUseBrain(this.config, this.desktop, this.a11y, this.safety, computerUseOverrides);
       this.computerUse.setVerifier(this.verifier);
-      console.log(`🖥️  Computer Use API enabled (Anthropic native tool + accessibility)`);
     } else if (isGenericComputerUseSupported(this.config, pipelineConfig)) {
-      // Non-Anthropic provider with a vision model — use the universal OpenAI-compat loop
+      // Non-Anthropic provider with a vision model — legacy generic
+      // Computer Use loop. Same deal: quiet at startup, loud when it runs.
       this.genericComputerUse = new GenericComputerUse(this.config, this.desktop, this.a11y, this.safety, pipelineConfig);
       this.genericComputerUse.setVerifier(this.verifier);
-      const visionModel = pipelineConfig?.layer3?.model || this.config.ai.visionModel || 'unknown';
-      console.log(`🌐 Generic Computer Use enabled (${visionModel})`);
     }
 
     const size = this.desktop.getScreenSize();
