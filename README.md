@@ -13,13 +13,13 @@
   <a href="https://github.com/AmrDab/clawdcursor/stargazers"><img src="https://img.shields.io/github/stars/AmrDab/clawdcursor?style=for-the-badge&logo=github&color=eab308&logoColor=white" alt="GitHub stars"></a>
   <a href="https://github.com/AmrDab/clawdcursor/releases/latest"><img src="https://img.shields.io/github/v/release/AmrDab/clawdcursor?style=for-the-badge&color=22c55e&label=release" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/AmrDab/clawdcursor?style=for-the-badge&color=a855f7" alt="MIT license"></a>
-  <a href="https://discord.gg/UGBWKvmj"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://discord.gg/hW29nrEZ8G"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
   <a href="https://clawdcursor.com"><img src="https://img.shields.io/badge/Website-clawdcursor.com-0ea5e9?style=for-the-badge" alt="Website"></a>
 </p>
 
 <p align="center">
   <a href="https://clawdcursor.com">Website</a> &middot;
-  <a href="https://discord.gg/UGBWKvmj">Discord</a> &middot;
+  <a href="https://discord.gg/hW29nrEZ8G">Discord</a> &middot;
   <a href="#install-the-skill">Install</a> &middot;
   <a href="#connect-your-agent">Connect</a> &middot;
   <a href="#tool-surface">Tools</a> &middot;
