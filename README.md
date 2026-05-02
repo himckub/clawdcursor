@@ -54,10 +54,11 @@ No app-specific integrations. No per-service API keys. No cloud round-trip &mdas
 
 ## Latest Release
 
-**v0.8.6** &mdash; polish release. Fixes a stale `McpServer` version string that had been advertising `v0.7.2` in MCP client metadata since the v0.7.x line; adds `SECURITY.md` and a private vulnerability reporting channel; trims the homepage; prunes stale repo artifacts.
+**v0.8.7** &mdash; security hardening release. Direct tool calls (REST `/execute/:name` and MCP `callTool`) now route through a shared safety gate, closing a gap where direct invocations bypassed the checks the agent loop applied. Accessibility, window, and clipboard reads consolidate onto `PlatformAdapter`. The version string is now single-sourced from `package.json` with a CI guard against drift. Plus tooling bumps: TypeScript 6.0, ESLint 10, Playwright 1.59, and routine dependency hygiene.
 
 The substantive work landed earlier in the v0.8.x line:
 
+- **v0.8.6** &mdash; polish release. Fixes a stale `McpServer` version string that had been advertising `v0.7.2` in MCP client metadata since the v0.7.x line; adds `SECURITY.md` and a private vulnerability reporting channel; trims the homepage; prunes stale repo artifacts.
 - **v0.8.5** &mdash; `computer({"action":"key","combo":"..."})` now actually works (compact-tool keyboard remap was missing); 16 documentation accuracy fixes; cost-tier ladder added to SKILL.md.
 - **v0.8.4** &mdash; security maintenance: patches every fixable CVE in the dependency tree (vite, path-to-regexp, picomatch, hono, follow-redirects); README rewritten to frame clawdcursor as a *skill* rather than a standalone server.
 - **v0.8.3** &mdash; idempotent `open_app` (no more N copies of Outlook stacking up under retry), agent runaway guard, `clawdcursor stop` sweeps every mode.
