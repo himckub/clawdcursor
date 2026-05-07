@@ -237,12 +237,17 @@ export async function runAgent(input: AgentInput, deps: AgentDeps): Promise<Agen
           : typeof call.args.target === 'string' ? call.args.target
           : undefined;
 
-        // 5a. Safety gate — single chokepoint.
+        // 5a. Safety gate — single chokepoint. Pass through the user's task
+        // text so the layer can detect intent-matched bypasses (when the user
+        // explicitly asked for a destructive action, the confirm tier is
+        // skipped — the agent isn't hallucinating a Send click out of nowhere,
+        // the user typed "hit send").
         const decision = safetyEvaluate({
           tool: call.name,
           args: call.args,
           targetLabel,
           activeApp,
+          userTaskText: input.task,
         });
         if (!isAllowed(decision)) {
           const reason = decision.decision === 'block'
