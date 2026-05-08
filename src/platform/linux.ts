@@ -43,6 +43,7 @@ import type {
   WindowState,
 } from './types';
 import { waitForLaunchedWindow, buildAppPredicate } from './launch-poll';
+import { getPackageRoot } from '../paths';
 
 const execFileAsync = promisify(execFile);
 
@@ -118,7 +119,7 @@ export class LinuxAdapter implements PlatformAdapter {
     // python3 must be on PATH, AND `from gi.repository import Atspi` must
     // succeed (requires python3-gi + gir1.2-atspi-2.0). We run the probe
     // with a short timeout so boots stay snappy when neither is installed.
-    this.atspiScript = path.resolve(__dirname, '..', '..', '..', 'scripts', 'linux', 'atspi-bridge.py');
+    this.atspiScript = path.resolve(getPackageRoot(), 'scripts', 'linux', 'atspi-bridge.py');
     if (await this.hasBinary('python3')) {
       try {
         await execFileAsync(

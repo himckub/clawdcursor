@@ -33,7 +33,7 @@ function buildIndex(): void {
   if (indexBuilt) return;
   indexBuilt = true;
 
-  const guidesDir = path.join(__dirname, '..', 'guides');
+  const guidesDir = path.join(__dirname, 'knowledge', 'guides');
   if (!fs.existsSync(guidesDir)) return;
 
   try {
@@ -159,7 +159,7 @@ export function saveLesson(
   if (!processName || actionLog.length === 0) return;
 
   const guide = loadGuide(processName);
-  const guidesDir = path.join(__dirname, '..', 'guides');
+  const guidesDir = path.join(__dirname, 'knowledge', 'guides');
 
   // Create a workflow key from the task (kebab-case, max 40 chars)
   const workflowKey = taskDescription

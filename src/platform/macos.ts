@@ -31,9 +31,10 @@ import type {
   WindowState,
 } from './types';
 import { waitForLaunchedWindow, buildAppPredicate } from './launch-poll';
+import { getPackageRoot } from '../paths';
 
 const execFileAsync = promisify(execFile);
-const SCRIPTS_DIR = path.join(__dirname, '..', '..', '..', 'scripts', 'mac');
+const SCRIPTS_DIR = path.join(getPackageRoot(), 'scripts', 'mac');
 
 // Tunables (kept here, not magic numbers)
 const OSASCRIPT_TIMEOUT_MS = 8_000;
@@ -833,9 +834,10 @@ export class MacOSAdapter implements PlatformAdapter {
   // ─── INTERNAL HELPERS ─────────────────────────────────────────────
 
   private findHelper(name: string): string | null {
+    const root = getPackageRoot();
     const candidates = [
-      path.join(__dirname, '..', '..', '..', 'native', 'ClawdCursor.app', 'Contents', 'MacOS', name),
-      path.join(__dirname, '..', '..', '..', 'node_modules', '.clawdcursor', 'ClawdCursor.app', 'Contents', 'MacOS', name),
+      path.join(root, 'native', 'ClawdCursor.app', 'Contents', 'MacOS', name),
+      path.join(root, 'node_modules', '.clawdcursor', 'ClawdCursor.app', 'Contents', 'MacOS', name),
       path.join(os.homedir(), '.clawdcursor', 'ClawdCursor.app', 'Contents', 'MacOS', name),
     ];
     return candidates.find(p => fs.existsSync(p)) ?? null;

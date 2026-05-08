@@ -18,6 +18,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { resolveApiConfig } from './credentials';
 import { DEFAULT_CONFIG } from '../types';
+import { getPackageRoot } from '../paths';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -218,7 +219,7 @@ export function resolveConfig(input?: ResolveInput): ResolvedConfig {
   const projectConfigPath = input?.projectConfigPath
     ?? (() => {
       // Match loadPipelineConfig precedence: pkg dir first, then cwd
-      const pkgPath = path.resolve(__dirname, '..', '.clawdcursor-config.json');
+      const pkgPath = path.resolve(getPackageRoot(), '.clawdcursor-config.json');
       if (fs.existsSync(pkgPath)) return pkgPath;
       return path.join(process.cwd(), '.clawdcursor-config.json');
     })();

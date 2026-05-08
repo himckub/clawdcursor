@@ -756,7 +756,7 @@ export function getExtraTools(): ToolDefinition[] {
           if (task && Array.isArray(actions)) {
             saveLesson(processName, task, actions);
           }
-          const guidesDir = pathMod.join(__dirname, '..', '..', 'guides');
+          const guidesDir = pathMod.join(__dirname, '..', 'llm', 'knowledge', 'guides');
           const guide = loadGuide(processName);
           if (guide && (shortcuts || tips)) {
             const guidePath = pathMod.join(

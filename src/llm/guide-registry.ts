@@ -22,7 +22,7 @@ import * as https from 'https';
 
 const REGISTRY_BASE = 'https://raw.githubusercontent.com/aschmelyun/use-the-keyboard/master/content';
 const REGISTRY_INDEX = `${REGISTRY_BASE}/index.json`;
-const GUIDES_DIR = path.join(__dirname, '..', 'guides');
+const GUIDES_DIR = path.join(__dirname, 'knowledge', 'guides');
 
 // ── Process name mapping ─────────────────────────────────────────────────────
 // Maps registry slugs → Windows/macOS process names for auto-detection.

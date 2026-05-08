@@ -14,13 +14,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
 import { psRunner } from './ps-runner';
+import { getPackageRoot } from '../paths';
 
 const execFileAsync = promisify(execFile);
 const PLATFORM = os.platform();
 const IS_WIN = PLATFORM === 'win32';
 const IS_MAC = PLATFORM === 'darwin';
 const IS_LINUX = PLATFORM === 'linux';
-const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
+const SCRIPTS_DIR = path.join(getPackageRoot(), 'scripts');
 const MAC_SCRIPTS_DIR = path.join(SCRIPTS_DIR, 'mac');
 
 // macOS JXA can be slow on first call; 30s gives headroom.

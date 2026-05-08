@@ -33,6 +33,7 @@ import type {
   ModelTestResult,
 } from '../llm/providers';
 import { DEFAULT_CONFIG } from '../types';
+import { getPackageRoot } from '../paths';
 import { resolveApiConfig } from '../llm/credentials';
 import { callVisionLLMDirect } from '../llm/client';
 import { hasConsent } from './onboarding';
@@ -707,7 +708,7 @@ async function runSingleProviderFlow(
 
   // Save Config
   if (opts.save !== false) {
-    const configPath = path.join(path.resolve(__dirname, '..'), CONFIG_FILE);
+    const configPath = path.join(getPackageRoot(), CONFIG_FILE);
     // SECURITY: this file stores provider/model names and base URLs only.
     // API keys are NEVER written here; they must live in env vars or .env files.
     const singleTextEntry = {
@@ -1089,7 +1090,7 @@ async function testModelAsync(
  */
 function savePipelineConfig(pipeline: PipelineConfig, scanResults: ProviderScanResult[]): void {
   // Always save to the package directory so loadPipelineConfig finds it reliably
-  const configPath = path.join(path.resolve(__dirname, '..'), CONFIG_FILE);
+  const configPath = path.join(getPackageRoot(), CONFIG_FILE);
 
   // Determine which providers are actually used
   const layer2ProviderKey = providerKeyForUrl(pipeline.layer2.baseUrl) || pipeline.providerKey;
@@ -1249,7 +1250,7 @@ async function registerExternalSkills(results: DiagResult[]): Promise<void> {
   const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   if (!homeDir) return;
 
-  const clawdCursorRoot = path.resolve(__dirname, '..');
+  const clawdCursorRoot = getPackageRoot();
 
   // Each entry: [platform name, skills directory path, target folder name]
   const platforms: [string, string, string][] = [
@@ -1298,7 +1299,7 @@ async function registerExternalSkills(results: DiagResult[]): Promise<void> {
  */
 async function checkForUpdates(results: DiagResult[]): Promise<void> {
   try {
-    const pkgPath = path.join(__dirname, '..', 'package.json');
+    const pkgPath = path.join(getPackageRoot(), 'package.json');
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
     const currentVersion = pkg.version || '0.0.0';
     console.log(`   Current: v${currentVersion}`);
@@ -1346,7 +1347,7 @@ async function checkForUpdates(results: DiagResult[]): Promise<void> {
       console.log(`   ⚠️  Update check failed — skipping`);
     }
     // Don't fail the doctor for a version check issue
-    const pkgPath = path.join(__dirname, '..', 'package.json');
+    const pkgPath = path.join(getPackageRoot(), 'package.json');
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
       results.push({ name: 'Version', ok: true, detail: `v${pkg.version} (update check unavailable)` });
@@ -1546,7 +1547,7 @@ function resolveProviderApiKey(providerKey: string, fallbackApiKey?: string): st
 }
 
 export function loadPipelineConfig(): PipelineConfig | null {
-  const pkgDir = path.resolve(__dirname, '..');
+  const pkgDir = getPackageRoot();
   let configPath = path.join(pkgDir, CONFIG_FILE);
 
   if (!fs.existsSync(configPath)) {

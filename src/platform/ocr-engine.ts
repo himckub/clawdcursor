@@ -19,10 +19,11 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { screen } from '@nut-tree-fork/nut-js';
 import sharp from 'sharp';
+import { getPackageRoot } from '../paths';
 
 const execFileAsync = promisify(execFile);
 
-const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
+const SCRIPTS_DIR = path.join(getPackageRoot(), 'scripts');
 const OCR_SCRIPT = path.join(SCRIPTS_DIR, 'ocr-recognize.ps1');
 const MAC_OCR_SCRIPT = path.join(SCRIPTS_DIR, 'mac', 'ocr-recognize.swift');
 const LINUX_OCR_SCRIPT = path.join(SCRIPTS_DIR, 'linux', 'ocr-recognize.py');

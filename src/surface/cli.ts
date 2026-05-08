@@ -55,7 +55,7 @@ import { resolveApiConfig } from '../llm/credentials';
 import { resolveConfig } from '../llm/config';
 import * as fs from 'fs';
 import * as path from 'path';
-import { migrateFromLegacyDir } from '../paths';
+import { migrateFromLegacyDir, getPackageRoot } from '../paths';
 import { ensureHostAppRunning, stopHostApp } from '../platform/native-helper';
 
 dotenv.config();
@@ -279,7 +279,7 @@ async function runAgentMode(opts: AgentModeOpts): Promise<void> {
 
   // ── First-run auto-setup (only when LLM is wanted) ──
   if (!opts.noLlm) {
-    const configPath = path.join(__dirname, '..', '.clawdcursor-config.json');
+    const configPath = path.join(getPackageRoot(), '.clawdcursor-config.json');
     if (!fs.existsSync(configPath)) {
       console.log(`${e('🔍', '*')} First run — auto-detecting AI providers...\n`);
       const { quickSetup } = await import('./doctor');
@@ -436,7 +436,7 @@ async function runAgentMode(opts: AgentModeOpts): Promise<void> {
           if (err.name === 'LLMAuthError') {
             console.error(`\n${e('❌', '[ERR]')} API key INVALID for ${pipelineConfig.provider.name} (${pipelineConfig.layer2.model})`);
             console.error(`   The saved config has an expired or revoked key.\n`);
-            const staleConfig = path.join(path.resolve(__dirname, '..'), '.clawdcursor-config.json');
+            const staleConfig = path.join(getPackageRoot(), '.clawdcursor-config.json');
             try { fs.unlinkSync(staleConfig); } catch { /* ok */ }
             console.error(`   ${e('🗑️', '[DEL]')}  Removed stale config. Fix your key and restart:`);
             console.error(`   1. Update your API key in .env or environment variables`);
@@ -562,7 +562,7 @@ program
     });
 
     if (opts.reset) {
-      const configPath = path.join(__dirname, '..', '.clawdcursor-config.json');
+      const configPath = path.join(getPackageRoot(), '.clawdcursor-config.json');
       if (fs.existsSync(configPath)) {
         fs.unlinkSync(configPath);
         console.log(`${e('🗑️', '[DEL]')}  Cleared saved config — re-detecting from scratch\n`);
@@ -874,7 +874,7 @@ program
     }
 
     console.log(`\n${e('🗑️', '[DEL]')}  Uninstalling Clawd Cursor...\n`);
-    const clawdRoot = path.resolve(__dirname, '..');
+    const clawdRoot = getPackageRoot();
     const homeDir = os.homedir();
     let removed = 0;
 

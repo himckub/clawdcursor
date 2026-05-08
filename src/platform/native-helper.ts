@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as readline from 'readline';
+import { getPackageRoot } from '../paths';
 
 const IS_MACOS = process.platform === 'darwin';
 const HOST_PORT = parseInt(process.env.CLAWDCURSOR_HOST_PORT || '3848', 10);
@@ -91,11 +92,12 @@ export class NativeHelper {
       throw new Error('Native helper is only available on macOS');
     }
     // Look for the helper in various locations
+    const root = getPackageRoot();
     const locations = [
       // Development: native/ClawdCursor.app
-      path.join(__dirname, '..', 'native', 'ClawdCursor.app', 'Contents', 'MacOS', binary),
+      path.join(root, 'native', 'ClawdCursor.app', 'Contents', 'MacOS', binary),
       // Installed via npm: node_modules/.clawdcursor/ClawdCursor.app
-      path.join(__dirname, '..', 'node_modules', '.clawdcursor', 'ClawdCursor.app', 'Contents', 'MacOS', binary),
+      path.join(root, 'node_modules', '.clawdcursor', 'ClawdCursor.app', 'Contents', 'MacOS', binary),
       // Global install
       path.join(os.homedir(), '.clawdcursor', 'ClawdCursor.app', 'Contents', 'MacOS', binary),
     ];
@@ -483,9 +485,10 @@ export async function requestPermissions(): Promise<PermissionStatus> {
 }
 
 function getNativeHelperPath(binary: string): string {
+  const root = getPackageRoot();
   const locations = [
-    path.join(__dirname, '..', 'native', 'ClawdCursor.app', 'Contents', 'MacOS', binary),
-    path.join(__dirname, '..', 'node_modules', '.clawdcursor', 'ClawdCursor.app', 'Contents', 'MacOS', binary),
+    path.join(root, 'native', 'ClawdCursor.app', 'Contents', 'MacOS', binary),
+    path.join(root, 'node_modules', '.clawdcursor', 'ClawdCursor.app', 'Contents', 'MacOS', binary),
     path.join(os.homedir(), '.clawdcursor', 'ClawdCursor.app', 'Contents', 'MacOS', binary),
   ];
   for (const loc of locations) {

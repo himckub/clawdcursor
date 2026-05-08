@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { getPackageRoot } from '../paths';
 
 /**
  * Credential Resolution — multi-source API key + endpoint detection.
@@ -194,7 +195,7 @@ function getOpenClawRoots(): string[] {
 
 function readConfiguredProvider(): string | undefined {
   // Check both the package directory (where the code lives) and cwd
-  const pkgConfigPath = path.join(__dirname, '..', '.clawdcursor-config.json');
+  const pkgConfigPath = path.join(getPackageRoot(), '.clawdcursor-config.json');
   const cwdConfigPath = path.join(process.cwd(), '.clawdcursor-config.json');
   const cfg = safeReadJson(pkgConfigPath) || safeReadJson(cwdConfigPath);
   if (!cfg || !isObject(cfg)) return undefined;

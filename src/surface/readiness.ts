@@ -13,6 +13,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { hasConsent } from './onboarding';
 import { checkPermissionsQuick, isMacOS } from '../platform/native-helper';
+import { getPackageRoot } from '../paths';
 
 const CONFIG_FILE = '.clawdcursor-config.json';
 
@@ -53,7 +54,7 @@ function getCandidateConfigPaths(): string[] {
   const candidates = [
     path.join(process.cwd(), CONFIG_FILE),
     path.join(os.homedir(), 'clawdcursor', CONFIG_FILE),
-    path.join(__dirname, '..', CONFIG_FILE),
+    path.join(getPackageRoot(), CONFIG_FILE),
   ];
 
   return Array.from(new Set(candidates));
