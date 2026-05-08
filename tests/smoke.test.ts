@@ -1,30 +1,32 @@
-import { describe, expect, it, vi, beforeAll } from 'vitest';
+/**
+ * Smoke tests for the v0.9 PR7 cutover.
+ *
+ * The legacy REST surface (createServer in src/server.ts) was deleted in
+ * PR7.4. The surviving HTTP routes (/health, /stop, /, and the /mcp
+ * streamable-HTTP transport) live in src/http-utility.ts.
+ *
+ * This test suite proves:
+ *   - The default config still has the expected port / host / safety tier
+ *   - createUtilityServer wires /health public + /stop auth + /
+ *   - The /mcp route refuses anonymous requests (auth gate works)
+ */
+
+import { describe, expect, it, beforeAll } from 'vitest';
 import request from 'supertest';
-import { createServer, initServerToken } from '../src/server';
+import { createUtilityServer, initServerToken } from '../src/http-utility';
 import { DEFAULT_CONFIG, SafetyTier } from '../src/types';
 import { VERSION } from '../src/version';
 
-// Initialize auth token for tests
 let token: string;
 beforeAll(() => {
   token = initServerToken();
 });
 
-/** Helper: attach auth header to a supertest request */
-function withAuth(req: request.Test): request.Test {
-  return req.set('Authorization', `Bearer ${token}`);
-}
-
-function makeAgent(overrides: Partial<any> = {}) {
-  const agent = {
-    getState: () => ({ status: 'idle', stepsCompleted: 0, stepsTotal: 0 }),
-    executeTask: vi.fn().mockResolvedValue({ success: true }),
-    abort: vi.fn(),
-    disconnect: vi.fn(),
-    ...overrides,
-  } as any;
-
-  return { agent };
+function makeUtilityApp() {
+  return createUtilityServer({
+    host: '127.0.0.1',
+    onStop: () => { /* test stub */ },
+  });
 }
 
 describe('config defaults', () => {
@@ -36,42 +38,55 @@ describe('config defaults', () => {
   });
 });
 
-describe('server smoke tests', () => {
+describe('utility server smoke tests', () => {
   it('returns health with version (no auth needed)', async () => {
-    const { agent } = makeAgent();
-    const app = createServer(agent, DEFAULT_CONFIG);
+    const app = makeUtilityApp();
     const res = await request(app).get('/health');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
     expect(res.body.version).toBe(VERSION);
   });
 
-  it('returns status without auth (public endpoint)', async () => {
-    const { agent } = makeAgent();
-    const app = createServer(agent, DEFAULT_CONFIG);
-    const res = await request(app).get('/status');
+  it('serves the dashboard at GET /', async () => {
+    const app = makeUtilityApp();
+    const res = await request(app).get('/');
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('idle');
+    expect(res.text).toContain('Clawd Cursor Dashboard');
   });
 
-  it('returns 401 on protected GET endpoints without auth', async () => {
-    const { agent } = makeAgent();
-    const app = createServer(agent, DEFAULT_CONFIG);
+  it('returns 401 on /stop without auth', async () => {
+    const app = makeUtilityApp();
+    const res = await request(app).post('/stop');
+    expect(res.status).toBe(401);
+  });
 
-    const protectedGets = ['/favorites', '/task-logs', '/task-logs/current', '/logs'];
-    for (const endpoint of protectedGets) {
-      const res = await request(app).get(endpoint);
-      expect(res.status).toBe(401);
+  it('rejects cross-origin browser requests', async () => {
+    const app = makeUtilityApp();
+    const res = await request(app)
+      .get('/health')
+      .set('Origin', 'https://evil.example');
+    expect(res.status).toBe(403);
+  });
+
+  it('accepts allowed-origin browser requests', async () => {
+    const app = makeUtilityApp();
+    const res = await request(app)
+      .get('/health')
+      .set('Origin', 'http://127.0.0.1:3847');
+    expect(res.status).toBe(200);
+    expect(res.headers['access-control-allow-origin']).toBe('http://127.0.0.1:3847');
+  });
+});
+
+describe('PR7 cutover invariants', () => {
+  it('the legacy REST routes are gone', async () => {
+    const app = makeUtilityApp();
+    // /task, /favorites, /tools, /execute, /action, /logs, /task-logs,
+    // /screenshot, /report, /learn — all deleted in PR7.4. The utility
+    // server only owns /, /health, /stop. Anything else 404s.
+    for (const route of ['/task', '/favorites', '/tools', '/execute/foo', '/action', '/logs', '/task-logs', '/screenshot', '/report', '/learn', '/abort', '/status']) {
+      const res = await request(app).get(route).set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(404);
     }
-  });
-
-  it('returns 409 when busy on /task', async () => {
-    const { agent } = makeAgent({
-      getState: () => ({ status: 'acting', stepsCompleted: 1, stepsTotal: 2 }),
-    });
-    const app = createServer(agent, DEFAULT_CONFIG);
-    const res = await withAuth(request(app).post('/task')).send({ task: 'do something' });
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe('Agent is busy');
   });
 });

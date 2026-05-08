@@ -46,7 +46,7 @@ process.on('unhandledRejection', (reason: any) => {
 
 import { Command } from 'commander';
 import { Agent } from './agent';
-import { createServer } from './server';
+import { createUtilityServer, requireAuth, initServerToken, getServerLogBuffer } from './http-utility';
 import { DEFAULT_CONFIG } from './types';
 import type { ClawdConfig } from './types';
 import { VERSION } from './version';
@@ -204,59 +204,81 @@ program
   .description('🐾 AI Desktop Agent — native screen control')
   .version(VERSION);
 
-program
-  .command('start')
-  .description('Start the Clawd Cursor agent')
-  .option('--port <port>', 'API server port', '3847')
-  .option('--provider <provider>', 'AI provider (auto-detected, or specify: anthropic|openai|ollama|kimi|groq|...)')
-  .option('--model <model>', 'Vision model to use')
-  .option('--text-model <model>', 'Text/reasoning model for Layer 2')
-  .option('--vision-model <model>', 'Vision model for Layer 3')
-  .option('--base-url <url>', 'Custom API base URL (OpenAI-compatible)')
-  .option('--api-key <key>', 'AI provider API key')
-  .option('--debug', 'Save screenshots to debug/ folder (off by default)')
-  .option('--accept', 'Accept desktop control consent non-interactively and start')
-  .option('--no-vision', 'Refuse vision fallback — blind-first only (high-security mode)')
-  .action(async (opts) => {
-    // Single-instance guard
-    const existingPid = claimPidFile('start');
-    if (existingPid !== null) {
-      console.error(`${e('❌', '[ERR]')} clawdcursor start is already running (pid ${existingPid}). Run \`clawdcursor stop\` first.`);
-      process.exit(1);
-    }
+// ── Agent mode (v0.9 PR7.4) ────────────────────────────────────────────
+//
+// Single daemon entry point. Replaces the legacy `start` (full daemon with
+// LLM) and `serve` (tool-only, no LLM) commands; both still exist as
+// deprecated aliases that print a warning and proxy to runAgentMode.
+//
+// Surface mounted on the daemon's port (default 3847):
+//   GET  /         — dashboard (calls /mcp via JSON-RPC)
+//   GET  /health   — readiness probe (no auth)
+//   POST /stop     — graceful shutdown (auth + localhost-only)
+//   POST /mcp      — MCP streamable-HTTP transport (auth)
+//   GET  /mcp      — MCP SSE channel (auth)
+//   DELETE /mcp    — MCP session terminate (auth)
+//
+// `--no-llm` skips the autonomous-agent path: no Tier-0 decomposer,
+// no API-key validation, ToolContext.agent is undefined. The MCP tool
+// surface is still fully available — clients drive primitives directly.
+interface AgentModeOpts {
+  port?: string;
+  provider?: string;
+  model?: string;
+  textModel?: string;
+  visionModel?: string;
+  baseUrl?: string;
+  apiKey?: string;
+  debug?: boolean;
+  accept?: boolean;
+  noVision?: boolean;
+  noLlm?: boolean;
+  skipConsent?: boolean;
+}
 
-    // Handle consent before anything else
-    const { hasConsent, writeConsentFile, runOnboarding } = await import('./onboarding');
-    if (opts.accept) {
-      writeConsentFile();
-      console.log('  Consent recorded.\n');
-    } else if (!hasConsent()) {
-      const accepted = await runOnboarding('start', parseInt(opts.port, 10) || 3847);
-      if (!accepted) process.exit(1);
-    }
+async function runAgentMode(opts: AgentModeOpts): Promise<void> {
+  // Single-instance guard — uses the legacy `start` lockfile name so
+  // existing `clawdcursor stop` sweeps still find it.
+  const existingPid = claimPidFile('start');
+  if (existingPid !== null) {
+    console.error(`${e('❌', '[ERR]')} clawdcursor agent is already running (pid ${existingPid}). Run \`clawdcursor stop\` first.`);
+    process.exit(1);
+  }
 
-    if (process.platform === 'darwin') {
-      await ensureHostAppRunning();
-    }
+  // ── Consent ──
+  const { hasConsent, writeConsentFile, runOnboarding } = await import('./onboarding');
+  const canSkipDev = opts.skipConsent && process.env.NODE_ENV === 'development';
+  if (opts.accept) {
+    writeConsentFile();
+    console.log('  Consent recorded.\n');
+  } else if (!canSkipDev && !hasConsent()) {
+    const accepted = await runOnboarding('start', parseInt(opts.port ?? '3847', 10) || 3847);
+    if (!accepted) process.exit(1);
+  }
 
-    // Pre-check: is the port already in use? Do this BEFORE expensive init.
-    const requestedPort = parseInt(opts.port, 10) || 3847;
-    const requestedHost = '127.0.0.1';
-    const net = await import('net');
-    const portFree = await new Promise<boolean>((resolve) => {
-      const tester = net.createServer()
-        .once('error', () => resolve(false))
-        .once('listening', () => { tester.close(); resolve(true); });
-      tester.listen(requestedPort, requestedHost);
-    });
-    if (!portFree) {
-      console.error(`\n${e('❌', '[ERR]')} Port ${requestedPort} is already in use.`);
-      console.error(`Another clawdcursor instance may be running.`);
-      console.error(`Run 'clawdcursor stop' first, or use --port <other_port>`);
-      process.exit(1);
-    }
+  if (process.platform === 'darwin') {
+    await ensureHostAppRunning();
+  }
 
-    // Auto-setup on first run
+  // ── Port pre-check ──
+  const requestedPort = parseInt(opts.port ?? '3847', 10) || 3847;
+  const requestedHost = '127.0.0.1';
+  const net = await import('net');
+  const portFree = await new Promise<boolean>((resolve) => {
+    const tester = net.createServer()
+      .once('error', () => resolve(false))
+      .once('listening', () => { tester.close(); resolve(true); });
+    tester.listen(requestedPort, requestedHost);
+  });
+  if (!portFree) {
+    console.error(`\n${e('❌', '[ERR]')} Port ${requestedPort} is already in use.`);
+    console.error(`Another clawdcursor instance may be running.`);
+    console.error(`Run 'clawdcursor stop' first, or use --port <other_port>`);
+    process.exit(1);
+  }
+
+  // ── First-run auto-setup (only when LLM is wanted) ──
+  if (!opts.noLlm) {
     const configPath = path.join(__dirname, '..', '.clawdcursor-config.json');
     if (!fs.existsSync(configPath)) {
       console.log(`${e('🔍', '*')} First run — auto-detecting AI providers...\n`);
@@ -269,58 +291,48 @@ program
         console.log('   Run `clawdcursor doctor` to set up AI providers.\n');
       }
     }
+  }
 
-    // Single config-resolution call — walks the canonical precedence ladder:
-    //   CLI flags > project config > user config > env vars > auto-detect > default
-    const resolved = resolveConfig({
-      cliFlags: {
-        apiKey:      opts.apiKey,
-        baseUrl:     opts.baseUrl,
-        textModel:   opts.textModel,
-        visionModel: opts.visionModel,
-        model:       opts.model,
-        provider:    opts.provider,
-        port:        opts.port,
-        debug:       opts.debug,
-        noVision:    opts.noVision,
-      },
-    });
+  const resolved = resolveConfig({
+    cliFlags: {
+      apiKey:      opts.apiKey,
+      baseUrl:     opts.baseUrl,
+      textModel:   opts.textModel,
+      visionModel: opts.visionModel,
+      model:       opts.model,
+      provider:    opts.provider,
+      port:        opts.port,
+      debug:       opts.debug,
+      noVision:    opts.noVision,
+    },
+  });
 
-    const config: ClawdConfig = {
-      ...DEFAULT_CONFIG,
-      server: {
-        ...DEFAULT_CONFIG.server,
-        port: resolved.port,
-      },
-      ai: {
-        provider: resolved.provider || DEFAULT_CONFIG.ai.provider,
-        apiKey: resolved.apiKey,
-        baseUrl: resolved.baseUrl,
-        textBaseUrl: resolved.textBaseUrl,
-        textApiKey: resolved.textApiKey,
-        visionBaseUrl: resolved.visionBaseUrl,
-        visionApiKey: resolved.visionApiKey,
-        model: resolved.model,
-        visionModel: resolved.visionModel,
-      },
-      debug: resolved.debug,
-    };
+  const config: ClawdConfig = {
+    ...DEFAULT_CONFIG,
+    server: {
+      ...DEFAULT_CONFIG.server,
+      port: resolved.port,
+    },
+    ai: {
+      provider: resolved.provider || DEFAULT_CONFIG.ai.provider,
+      apiKey: resolved.apiKey,
+      baseUrl: resolved.baseUrl,
+      textBaseUrl: resolved.textBaseUrl,
+      textApiKey: resolved.textApiKey,
+      visionBaseUrl: resolved.visionBaseUrl,
+      visionApiKey: resolved.visionApiKey,
+      model: resolved.model,
+      visionModel: resolved.visionModel,
+    },
+    debug: resolved.debug,
+  };
 
-    console.log(`\x1b[32m\u2713\x1b[0m \x1b[1mclawdcursor\x1b[0m \x1b[90mv${VERSION}\x1b[0m \x1b[90m\u2014 desktop control active on ${config.server.host}:${config.server.port}\x1b[0m`);
-    // Source-of-credentials banner ("External credentials detected…") was
-    // removed — the per-task header already shows the active model lineup,
-    // and doctor/status report the source explicitly when the user asks.
+  console.log(`\x1b[32m✓\x1b[0m \x1b[1mclawdcursor\x1b[0m \x1b[90mv${VERSION}\x1b[0m \x1b[90m— desktop control active on ${config.server.host}:${config.server.port}${opts.noLlm ? ' (--no-llm)' : ''}\x1b[0m`);
 
-    // ── Agent ──────────────────────────────────────────────────────────────
-    //
-    // Every task flows through the unified pipeline (blind-first by
-    // construction: a11y/OCR tried first, vision as fallback, decomposer
-    // splits compound tasks so each one runs its own full cycle). The v0.7
-    // cascade was deleted in v0.9.0.
-    // Pass resolved config so Agent reads disableVision/disableVerifier from
-    // the funnel instead of process.env directly.
-    const agent = new Agent(config, resolved);
-
+  // ── Agent (only when LLM is enabled) ──
+  let agent: Agent | undefined;
+  if (!opts.noLlm) {
+    agent = new Agent(config, resolved);
     try {
       await agent.connect();
     } catch (err) {
@@ -329,86 +341,79 @@ program
       console.error(`Make sure you're running this on a desktop with a display.`);
       process.exit(1);
     }
+  }
 
-    // Start API server (agent API + tool API on same port)
-    const app = createServer(agent, config);
+  // ── HTTP utility surface (/, /health, /stop) + MCP transport at /mcp ──
+  const app = createUtilityServer({
+    host: config.server.host,
+    onStop: () => { agent?.disconnect(); },
+  });
 
-    // Mount model-agnostic tool server alongside agent API
-    // POST /execute/* requires auth; GET /tools and GET /docs are public
-    let startToolCtx: any = null;
-    try {
-      const { createToolServer } = await import('./tool-server');
-      const { requireAuth, getServerLogBuffer } = await import('./server');
-      const { getPlatform } = await import('./v2/platform');
-      // Resolve the platform adapter eagerly — the unified pipeline already
-      // uses it, so reusing the same instance keeps OS state consistent
-      // between the agent and the tool-direct surface.
-      let startPlatform: import('./v2/platform/types').PlatformAdapter | undefined;
-      try { startPlatform = await getPlatform(); } catch { /* non-fatal */ }
-      const toolCtx = {
-        desktop: agent.getDesktop(),
-        a11y: (agent as any).a11y,
-        cdp: (agent as any).cdpDriver,
-        platform: startPlatform,
-        // v0.9 PR7.2: agent + logBuffer wired so MCP tools can submit_task,
-        // abort_task, agent_status, logs_recent without going through REST.
-        agent,
-        getLogBuffer: getServerLogBuffer,
-        getMouseScaleFactor: () => 1,  // start command uses agent's own scaling
-        getScreenshotScaleFactor: () => agent.getDesktop().getScaleFactor(),
-        ensureInitialized: async () => {},  // agent already initialized
-      };
-      startToolCtx = toolCtx;
-      app.use('/execute', requireAuth);  // auth gate on all tool execution
-      app.use(createToolServer(toolCtx));
-    } catch (err) {
-      console.warn('Tool server not loaded:', (err as Error).message);
+  // Build the ToolContext shared by every MCP handler. In agent mode it
+  // reuses the agent's already-connected NativeDesktop and AccessibilityBridge;
+  // in --no-llm mode it boots a fresh ToolContext like the legacy serve cmd.
+  const { getPlatform } = await import('./v2/platform');
+  let toolCtx: any;
+  if (agent) {
+    let platform: import('./v2/platform/types').PlatformAdapter | undefined;
+    try { platform = await getPlatform(); } catch { /* non-fatal */ }
+    toolCtx = {
+      desktop: agent.getDesktop(),
+      a11y: (agent as any).a11y,
+      cdp: (agent as any).cdpDriver,
+      platform,
+      agent,
+      getLogBuffer: getServerLogBuffer,
+      getMouseScaleFactor: () => 1,
+      getScreenshotScaleFactor: () => agent!.getDesktop().getScaleFactor(),
+      ensureInitialized: async () => {},  // agent already initialized
+    };
+  } else {
+    toolCtx = await createToolContext();
+    toolCtx.ensureInitialized().catch((err: any) => {
+      console.error('Subsystem init failed:', err?.message);
+    });
+    if (toolCtx.cdp) {
+      toolCtx.cdp.connect().then(() => {
+        console.log(`   ${e('🌐', '[NET]')} CDP connected to browser`);
+      }).catch(() => {
+        console.log(`   ${e('ℹ️', 'i')} CDP: no browser detected (will retry when web tools are called)`);
+      });
     }
+    toolCtx.getLogBuffer = getServerLogBuffer;
+  }
 
-    // v0.9 PR7: mount the streamable HTTP MCP transport at /mcp on the
-    // same Express app. /mcp is auth-gated by the same Bearer token used
-    // for REST mutating endpoints. This is additive — REST routes still
-    // work; PR7.4 will delete them. The dashboard rewires to /mcp in PR7.3.
-    if (startToolCtx) {
-      try {
-        const { createMcpServer, startMcpHttp } = await import('./mcp-server');
-        const { requireAuth } = await import('./server');
-        const { server: mcpServer } = await createMcpServer({ ctx: startToolCtx });
-        // Apply auth ahead of the route; the SDK handles the JSON-RPC envelope.
-        app.use('/mcp', requireAuth);
-        await startMcpHttp(mcpServer, app, '/mcp');
-      } catch (err) {
-        console.warn('MCP HTTP transport not loaded:', (err as Error).message);
-      }
-    }
+  // Mount /mcp behind the same Bearer-auth gate the legacy REST routes used.
+  try {
+    const { createMcpServer, startMcpHttp } = await import('./mcp-server');
+    const { server: mcpServer } = await createMcpServer({ ctx: toolCtx });
+    app.use('/mcp', requireAuth);
+    await startMcpHttp(mcpServer, app, '/mcp');
+  } catch (err) {
+    console.warn('MCP HTTP transport not loaded:', (err as Error).message);
+  }
 
-    app.listen(config.server.port, config.server.host, async () => {
-      // Generate auth token ONLY after port binds successfully
-      // This prevents overwriting a valid token when start fails (e.g. EADDRINUSE)
-      const { initServerToken } = await import('./server');
-      const serverToken = initServerToken();
-      const tokenPath = require('path').join(require('os').homedir(), '.clawdcursor', 'token');
-      console.log(`\n\x1b[32m${e('🌐', '[NET]')} API server:\x1b[0m http://${config.server.host}:${config.server.port}`);
-      console.log(`\x1b[33m${e('🔑', '[KEY]')} Auth token:\x1b[0m ${serverToken.slice(0, 8)}...`);
-      console.log(`\x1b[90m   (full token saved to ${tokenPath})\x1b[0m`);
-      console.log(`\nAgent endpoints:`);
-      console.log(`  POST /task     — {"task": "Open Chrome and go to github.com"}`);
-      console.log(`  GET  /status   — Agent state`);
-      console.log(`  POST /abort    — Stop current task`);
-      console.log(`\nTool server (model-agnostic):`);
-      console.log(`  GET  /tools    — Tool schemas (OpenAI function format)`);
-      console.log(`  POST /execute/{name} — Execute any tool`);
-      console.log(`  GET  /docs     — Tool documentation`);
-      console.log(`\nAll mutating endpoints require: \x1b[36mAuthorization: Bearer <token>\x1b[0m`);
+  app.listen(config.server.port, config.server.host, async () => {
+    const serverToken = initServerToken();
+    const tokenPath = path.join(require('os').homedir(), '.clawdcursor', 'token');
+    console.log(`\n\x1b[32m${e('🌐', '[NET]')} API server:\x1b[0m http://${config.server.host}:${config.server.port}`);
+    console.log(`\x1b[33m${e('🔑', '[KEY]')} Auth token:\x1b[0m ${serverToken.slice(0, 8)}...`);
+    console.log(`\x1b[90m   (full token saved to ${tokenPath})\x1b[0m`);
+    console.log(`\nSurviving HTTP routes:`);
+    console.log(`  GET  /         — Dashboard (calls /mcp via JSON-RPC)`);
+    console.log(`  GET  /health   — Readiness probe (no auth)`);
+    console.log(`  POST /stop     — Graceful shutdown (auth, localhost only)`);
+    console.log(`\nMCP endpoint (the only protocol):`);
+    console.log(`  POST /mcp      — JSON-RPC tools/call & tools/list (auth)`);
+    console.log(`  GET  /mcp      — SSE notifications (auth)`);
+    console.log(`\nAll mutating endpoints require: \x1b[36mAuthorization: Bearer <token>\x1b[0m`);
 
-      // Validate API key on startup — refuse to serve tasks with a dead key
+    if (!opts.noLlm) {
       const { loadPipelineConfig } = await import('./doctor');
       const pipelineConfig = loadPipelineConfig();
       if (pipelineConfig && pipelineConfig.layer2.enabled) {
         try {
           const { callTextLLMDirect } = await import('./llm-client');
-          // Resolve the correct API key and format for the TEXT model's provider
-          // (may differ from the main provider in mixed pipelines)
           const { PROVIDERS, PROVIDER_ENV_VARS } = await import('./providers');
           const { inferProviderFromBaseUrl } = await import('./credentials');
           const layer2ProviderKey = inferProviderFromBaseUrl(pipelineConfig.layer2.baseUrl) || pipelineConfig.providerKey;
@@ -431,28 +436,27 @@ program
           if (err.name === 'LLMAuthError') {
             console.error(`\n${e('❌', '[ERR]')} API key INVALID for ${pipelineConfig.provider.name} (${pipelineConfig.layer2.model})`);
             console.error(`   The saved config has an expired or revoked key.\n`);
-            // Delete stale config so next start re-detects
-            const staleConfig = require('path').join(require('path').resolve(__dirname, '..'), '.clawdcursor-config.json');
-            try { require('fs').unlinkSync(staleConfig); } catch { /* ok */ }
+            const staleConfig = path.join(path.resolve(__dirname, '..'), '.clawdcursor-config.json');
+            try { fs.unlinkSync(staleConfig); } catch { /* ok */ }
             console.error(`   ${e('🗑️', '[DEL]')}  Removed stale config. Fix your key and restart:`);
             console.error(`   1. Update your API key in .env or environment variables`);
-            console.error(`   2. Run: clawdcursor start   (will re-detect providers)`);
+            console.error(`   2. Run: clawdcursor agent   (will re-detect providers)`);
             console.error(`   Or run: clawdcursor doctor   to reconfigure manually\n`);
-            gracefulExitOnInitFailure(1, agent);
+            if (agent) gracefulExitOnInitFailure(1, agent);
+            else process.exit(1);
             return;
           } else if (err.name === 'LLMBillingError') {
             console.error(`\n${e('❌', '[ERR]')} API credits exhausted for ${pipelineConfig.provider.name}`);
             console.error(`   Add credits or switch providers, then restart.`);
             console.error(`   Run: clawdcursor doctor   to reconfigure\n`);
-            gracefulExitOnInitFailure(1, agent);
+            if (agent) gracefulExitOnInitFailure(1, agent);
+            else process.exit(1);
             return;
           } else {
             console.warn(`${e('⚠️', '[WARN]')} Could not validate API key: ${err.message?.substring(0, 100)}`);
-            // Network error or timeout — don't exit, might be transient
           }
         }
       } else if (!pipelineConfig) {
-        // Only exit if there are also no external credentials (OpenClaw, env vars, etc.)
         const hasExternalModels = !!(config.ai.model || config.ai.visionModel);
         if (!hasExternalModels) {
           console.error(`\n${e('❌', '[ERR]')} No AI providers configured.`);
@@ -461,15 +465,15 @@ program
           console.error(`      Then: ollama pull qwen2.5:7b\n`);
           console.error(`   Option 2 (API key): Set an environment variable:`);
           console.error(`      ANTHROPIC_API_KEY, OPENAI_API_KEY, MOONSHOT_API_KEY, etc.\n`);
-          console.error(`   Then run: clawdcursor start\n`);
-          gracefulExitOnInitFailure(1, agent);
+          console.error(`   Or run with --no-llm if you only need the tool surface.\n`);
+          if (agent) gracefulExitOnInitFailure(1, agent);
+          else process.exit(1);
           return;
         } else {
           console.log(`${e('✅', '[OK]')} Using externally configured models: text=${config.ai.model} | vision=${config.ai.visionModel}`);
         }
       }
 
-      // Warn if text model context window is below recommended minimum
       const { MIN_RECOMMENDED_CONTEXT } = await import('./providers');
       const ctxWindow = pipelineConfig?.provider?.textContextWindow;
       if (ctxWindow && ctxWindow < MIN_RECOMMENDED_CONTEXT) {
@@ -477,23 +481,71 @@ program
         console.warn(`   Web pages with many elements may overflow. Consider using a larger model.`);
         console.warn(`   Run: clawdcursor doctor   to switch models\n`);
       }
+    } else {
+      console.log(`${e('🐾', '>')} Tool surface ready (--no-llm). Connect any AI model.`);
+    }
 
-      console.log(`\nReady. ${e('🐾', '')}`);
-    });
-
-    // Graceful shutdown
-    process.on('SIGINT', () => {
-      console.log(`\n${e('👋', '--')} Shutting down...`);
-      releasePidFile('start');
-      agent.disconnect();
-      process.exit(0);
-    });
-    process.on('SIGTERM', () => {
-      releasePidFile('start');
-      agent.disconnect();
-      process.exit(0);
-    });
+    console.log(`\nReady. ${e('🐾', '')}`);
   });
+
+  process.on('SIGINT', () => {
+    console.log(`\n${e('👋', '--')} Shutting down...`);
+    releasePidFile('start');
+    agent?.disconnect();
+    process.exit(0);
+  });
+  process.on('SIGTERM', () => {
+    releasePidFile('start');
+    agent?.disconnect();
+    process.exit(0);
+  });
+}
+
+program
+  .command('agent')
+  .description('Start the clawdcursor daemon (autonomous agent + MCP-over-HTTP)')
+  .option('--port <port>', 'API server port', '3847')
+  .option('--provider <provider>', 'AI provider (auto-detected, or specify: anthropic|openai|ollama|kimi|groq|...)')
+  .option('--model <model>', 'Vision model to use')
+  .option('--text-model <model>', 'Text/reasoning model for Layer 2')
+  .option('--vision-model <model>', 'Vision model for Layer 3')
+  .option('--base-url <url>', 'Custom API base URL (OpenAI-compatible)')
+  .option('--api-key <key>', 'AI provider API key')
+  .option('--debug', 'Save screenshots to debug/ folder (off by default)')
+  .option('--accept', 'Accept desktop control consent non-interactively and start')
+  .option('--no-vision', 'Refuse vision fallback — blind-first only (high-security mode)')
+  .option('--no-llm', 'Tool surface only — no autonomous decomposer, no API-key validation')
+  .option('--skip-consent', 'Skip consent prompt (requires NODE_ENV=development)')
+  .action(async (opts) => {
+    await runAgentMode(opts);
+  });
+
+program
+  .command('start')
+  .description('[deprecated — use `clawdcursor agent`] Start the Clawd Cursor agent')
+  .option('--port <port>', 'API server port', '3847')
+  .option('--provider <provider>', 'AI provider (auto-detected, or specify: anthropic|openai|ollama|kimi|groq|...)')
+  .option('--model <model>', 'Vision model to use')
+  .option('--text-model <model>', 'Text/reasoning model for Layer 2')
+  .option('--vision-model <model>', 'Vision model for Layer 3')
+  .option('--base-url <url>', 'Custom API base URL (OpenAI-compatible)')
+  .option('--api-key <key>', 'AI provider API key')
+  .option('--debug', 'Save screenshots to debug/ folder (off by default)')
+  .option('--accept', 'Accept desktop control consent non-interactively and start')
+  .option('--no-vision', 'Refuse vision fallback — blind-first only (high-security mode)')
+  .action(async (opts) => {
+    // v0.9 PR7.4 — `start` is now a thin deprecation alias for `agent`.
+    // The legacy /task /favorites /execute REST surface was deleted; callers
+    // that still ran `clawdcursor start` keep working through this proxy
+    // until v0.10. Removed in v0.10.
+    console.warn(`${e('⚠', '[WARN]')} \`clawdcursor start\` is deprecated; use \`clawdcursor agent\`. Removed in v0.10.`);
+    await runAgentMode(opts);
+  });
+
+// ── Legacy start command body deleted in PR7.4 ──
+// The runAgentMode() function above is the canonical implementation.
+// `start` and `serve` are now thin deprecation aliases.
+
 
 program
   .command('doctor')
@@ -1103,116 +1155,19 @@ program
     process.on('SIGTERM', releaseMcp);
   });
 
-// ── Tool Server (model-agnostic, no LLM needed) ──
-
+// ── `serve` deprecation alias (v0.9 PR7.4) ──
+//
+// `clawdcursor serve` was the legacy "tool server only" daemon — same as
+// `clawdcursor agent --no-llm` in the new world. Kept as a deprecation
+// proxy through 0.9.x; removed in v0.10.
 program
   .command('serve')
-  .description('Start the tool server only (no autonomous agent, no LLM). Any AI model can connect via HTTP.')
+  .description('[deprecated — use `clawdcursor agent --no-llm`] Start the tool server only')
   .option('--port <port>', 'HTTP server port', '3847')
   .option('--skip-consent', 'Skip consent prompt (requires NODE_ENV=development)')
   .action(async (opts) => {
-    // Single-instance guard
-    const existingServePid = claimPidFile('serve');
-    if (existingServePid !== null) {
-      console.error(`${e('❌', '[ERR]')} clawdcursor serve is already running (pid ${existingServePid}). Run \`clawdcursor stop\` first.`);
-      process.exit(1);
-    }
-
-    const { runOnboarding, hasConsent } = await import('./onboarding');
-
-    // First-run consent — --skip-consent only works in development mode
-    const canSkip = opts.skipConsent && process.env.NODE_ENV === 'development';
-    if (!canSkip && !hasConsent()) {
-      const accepted = await runOnboarding();
-      if (!accepted) process.exit(1);
-    }
-
-    const port = parseInt(opts.port);
-    const express = (await import('express')).default;
-    const { createToolServer } = await import('./tool-server');
-    const { VERSION } = await import('./version');
-    const { randomBytes } = await import('crypto');
-    const os = await import('os');
-
-    // Generate auth token (same pattern as start mode)
-    const tokenDir = path.join(os.homedir(), '.clawdcursor');
-    if (!fs.existsSync(tokenDir)) fs.mkdirSync(tokenDir, { recursive: true });
-    const serveToken = randomBytes(32).toString('hex');
-    fs.writeFileSync(path.join(tokenDir, 'token'), serveToken, { encoding: 'utf-8', mode: 0o600 });
-
-    console.log(`\n${e('🐾', '>')} clawdcursor v${VERSION} — Tool Server mode`);
-    console.log('   No LLM. No autonomous agent. Just OS primitives over HTTP.\n');
-
-    const ctx = await createToolContext();
-
-    // Create HTTP server with tool routes
-    const app = express();
-    app.use(express.json());
-
-    // Auth middleware — require Bearer token on mutating (non-GET) endpoints
-    app.use((req: any, res: any, next: any) => {
-      if (req.method === 'GET') return next(); // GET /tools, /docs, /health are read-only
-      const authHeader = req.headers['authorization'] || '';
-      const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-      if (!bearer || bearer !== serveToken) {
-        return res.status(401).json({ error: 'Unauthorized — include Authorization: Bearer <token> header. Token is at ~/.clawdcursor/token' });
-      }
-      next();
-    });
-
-    app.use(createToolServer(ctx));
-
-    // v0.9 PR7: mount streamable HTTP MCP transport alongside the legacy
-    // REST tool server. Same auth gate, same context. PR7.4 deletes the
-    // REST tool surface; until then both transports run side-by-side.
-    try {
-      const { createMcpServer, startMcpHttp } = await import('./mcp-server');
-      const { server: mcpServer } = await createMcpServer({ ctx });
-      // /mcp shares the serve-mode auth gate (the app-level middleware
-      // above already enforces Bearer on non-GET; /mcp uses POST/GET/DELETE,
-      // so the GET branch — listing tools via tools/list — is unauth.
-      // That mirrors the REST `/tools` GET being unauth. Mutations on POST
-      // still pass through the gate.
-      await startMcpHttp(mcpServer, app, '/mcp');
-    } catch (err) {
-      console.warn('MCP HTTP transport not loaded:', (err as Error).message);
-    }
-
-    app.listen(port, '127.0.0.1', () => {
-      console.log(`   Tool server: http://127.0.0.1:${port}`);
-      console.log(`   Tool schemas: http://127.0.0.1:${port}/tools`);
-      console.log(`   Documentation: http://127.0.0.1:${port}/docs`);
-      console.log(`   Execute: POST http://127.0.0.1:${port}/execute/{tool_name}`);
-      console.log(`   MCP HTTP: POST http://127.0.0.1:${port}/mcp`);
-      console.log(`\n   ${e('🔑', '[KEY]')} Auth token: ${serveToken.slice(0, 8)}...`);
-      console.log(`   (full token saved to ~/.clawdcursor/token)`);
-      console.log(`   All POST endpoints require: Authorization: Bearer <token>`);
-      console.log(`\n   Ready. Connect your AI model.\n`);
-    });
-
-    // Background init — includes desktop + CDP warmup
-    ctx.ensureInitialized().catch((err: any) => {
-      console.error('Subsystem init failed:', err?.message);
-    });
-    // CDP warmup: try connecting to running browser (best-effort, non-fatal)
-    // Without this, all web tasks fall back to pure vision — no DOM access
-    if (ctx.cdp) {
-      ctx.cdp.connect().then(() => {
-        console.log(`   🌐 CDP connected to browser`);
-      }).catch(() => {
-        console.log(`   ℹ️  CDP: no browser detected (will retry when web tools are called)`);
-      });
-    }
-
-    process.on('SIGINT', () => {
-      console.log('\n   Shutting down...');
-      releasePidFile('serve');
-      process.exit(0);
-    });
-    process.on('SIGTERM', () => {
-      releasePidFile('serve');
-      process.exit(0);
-    });
+    console.warn(`${e('⚠', '[WARN]')} \`clawdcursor serve\` is deprecated; use \`clawdcursor agent --no-llm\`. Removed in v0.10.`);
+    await runAgentMode({ ...opts, noLlm: true });
   });
 
 program
