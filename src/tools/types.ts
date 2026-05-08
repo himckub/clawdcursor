@@ -46,6 +46,20 @@ export interface ToolContext {
    * async dance on every call.
    */
   platform?: import('../v2/platform/types').PlatformAdapter;
+  /**
+   * The autonomous Agent — present in `clawdcursor agent` (the daemon)
+   * and undefined when run via stdio MCP without a running agent.
+   * Used by submit_task / abort_task / agent_status / task_logs_*.
+   * v0.9 PR7.2: was previously implicit on `agent.x` accesses inside
+   * REST handlers; now it lives on ToolContext so MCP tools can use it.
+   */
+  agent?: import('../agent').Agent;
+  /**
+   * Optional log buffer accessor — populated by the daemon's createServer.
+   * MCP `logs_recent` reads through this; null/missing means logs are not
+   * captured (e.g. stdio MCP).
+   */
+  getLogBuffer?: () => Array<{ timestamp: number; level: string; message: string }>;
   /** Image-space → logical (mouse) coords. mouseCoord = imageCoord * factor */
   getMouseScaleFactor: () => number;
   /** Image-space → physical pixel coords (for screenshot region crop) */

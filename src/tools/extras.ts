@@ -607,5 +607,180 @@ export function getExtraTools(): ToolDefinition[] {
         return { text: 'Sent undo keystroke.' };
       },
     },
+
+    // ── DAEMON DIAGNOSTICS (v0.9 PR7.2) ────────────────────────────
+    // These three tools replace REST endpoints that the dashboard used to
+    // call directly. They're intentionally minimal — clients that want
+    // richer log views should consume task_logs_current instead.
+
+    {
+      name: 'logs_recent',
+      description:
+        'Return the last 200 captured console log entries from the daemon ' +
+        '(level + timestamp + message). Empty array when no log buffer is ' +
+        'attached (e.g. stdio MCP without a running daemon).',
+      parameters: {
+        limit: {
+          type: 'number',
+          description: 'Cap the number of entries returned (default 200)',
+          required: false,
+          minimum: 1,
+          maximum: 500,
+        },
+      },
+      category: 'orchestration',
+      compactGroup: 'system',
+      safetyTier: 0,
+      handler: async ({ limit }, ctx) => {
+        const cap = typeof limit === 'number' ? Math.max(1, Math.min(500, Math.floor(limit))) : 200;
+        if (!ctx.getLogBuffer) return { text: '[]' };
+        const buf = ctx.getLogBuffer();
+        const sliced = buf.length > cap ? buf.slice(buf.length - cap) : buf;
+        return { text: JSON.stringify(sliced) };
+      },
+    },
+
+    {
+      name: 'submit_report',
+      description:
+        'Submit a redacted task-log report to clawdcursor\'s telemetry endpoint. ' +
+        'Opt-in only — never runs unless explicitly invoked. Returns the ' +
+        'server-issued report ID and a preview of the redacted payload, or ' +
+        'an error reason when submission fails.',
+      parameters: {
+        userNote: {
+          type: 'string',
+          description: 'Optional free-text note describing what went wrong',
+          required: false,
+        },
+        logIndex: {
+          type: 'number',
+          description: 'Index into the recent task logs (0 = most recent). Defaults to 0.',
+          required: false,
+          minimum: 0,
+        },
+      },
+      category: 'orchestration',
+      compactGroup: 'system',
+      safetyTier: 2,
+      handler: async ({ userNote, logIndex }) => {
+        try {
+          const { apiSubmitReport } = await import('../report');
+          const result = await apiSubmitReport({
+            userNote: typeof userNote === 'string' ? userNote : undefined,
+            logIndex: typeof logIndex === 'number' ? logIndex : undefined,
+          });
+          if (result.success) {
+            return {
+              text: JSON.stringify({
+                success: true,
+                reportId: result.reportId,
+                preview: result.preview,
+              }),
+            };
+          }
+          return {
+            text: JSON.stringify({
+              success: false,
+              error: result.error,
+              reportId: result.reportId,
+              preview: result.preview,
+            }),
+            isError: true,
+          };
+        } catch (err) {
+          return {
+            text: `submit_report: ${(err as Error).message}`,
+            isError: true,
+          };
+        }
+      },
+    },
+
+    {
+      name: 'learn_app',
+      description:
+        'Persist a newly-learned workflow, shortcut, or tip for an app into ' +
+        'the local guides registry. Supports merging shortcut maps and tip ' +
+        'lists into the existing guide JSON. Use this at the end of a ' +
+        'successful exploration so future runs can short-circuit the same task.',
+      parameters: {
+        processName: {
+          type: 'string',
+          description: 'Process / app name (matches an existing guide JSON file)',
+          required: true,
+        },
+        task: {
+          type: 'string',
+          description: 'Optional task description that was learned',
+          required: false,
+        },
+        actionsJson: {
+          type: 'string',
+          description: 'Optional JSON array of {action, …} steps that achieved the task',
+          required: false,
+        },
+        shortcutsJson: {
+          type: 'string',
+          description: 'Optional JSON object of { name: keystroke } shortcut additions',
+          required: false,
+        },
+        tipsJson: {
+          type: 'string',
+          description: 'Optional JSON array of free-text tips',
+          required: false,
+        },
+      },
+      category: 'orchestration',
+      compactGroup: 'system',
+      safetyTier: 2,
+      handler: async ({ processName, task, actionsJson, shortcutsJson, tipsJson }) => {
+        try {
+          if (!processName || typeof processName !== 'string') {
+            return { text: 'learn_app: processName is required', isError: true };
+          }
+          const parseSafe = (raw: unknown): unknown => {
+            if (typeof raw !== 'string' || !raw.trim()) return undefined;
+            try { return JSON.parse(raw); } catch { return undefined; }
+          };
+          const actions = parseSafe(actionsJson);
+          const shortcuts = parseSafe(shortcutsJson);
+          const tips = parseSafe(tipsJson);
+
+          // Reach into the compiled guide-loader so the same persisted JSON
+          // shape is shared with the legacy /learn REST handler.
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { saveLesson, loadGuide } = require('../guide-loader');
+          const fsMod = await import('fs');
+          const pathMod = await import('path');
+
+          if (task && Array.isArray(actions)) {
+            saveLesson(processName, task, actions);
+          }
+          const guidesDir = pathMod.join(__dirname, '..', '..', 'guides');
+          const guide = loadGuide(processName);
+          if (guide && (shortcuts || tips)) {
+            const guidePath = pathMod.join(
+              guidesDir,
+              (guide.processNames?.[0] || processName) + '.json',
+            );
+            if (fsMod.existsSync(guidePath)) {
+              const raw = JSON.parse(fsMod.readFileSync(guidePath, 'utf8'));
+              if (shortcuts && typeof shortcuts === 'object') {
+                raw.shortcuts = { ...raw.shortcuts, ...(shortcuts as Record<string, unknown>) };
+              }
+              if (tips && Array.isArray(tips)) {
+                raw.tips = [...new Set([...(raw.tips || []), ...(tips as string[])])];
+              }
+              fsMod.writeFileSync(guidePath, JSON.stringify(raw, null, 2));
+            }
+          }
+
+          return { text: JSON.stringify({ saved: true, processName }) };
+        } catch (err) {
+          return { text: `learn_app: ${(err as Error).message}`, isError: true };
+        }
+      },
+    },
   ];
 }

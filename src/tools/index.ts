@@ -16,6 +16,8 @@ import { getExtraTools } from './extras';
 import { getA11yDepthTools } from './a11y_depth';
 import { getElectronBridgeTools } from './electron_bridge';
 import { getCompactTools } from './compact';
+import { getAgentTools } from './agent';
+import { getFavoritesTools } from './favorites';
 import type { ToolDefinition, ToolContext, ToolResult, CompactGroup } from './types';
 import { toOpenAiFunctions, toJsonSchema } from './types';
 
@@ -67,6 +69,8 @@ export function getTools(options?: GetToolsOptions): ToolDefinition[] {
     ...getExtraTools(),
     ...getA11yDepthTools(),
     ...getElectronBridgeTools(),
+    ...getAgentTools(),
+    ...getFavoritesTools(),
   ];
 
   if (options?.compactGroup) {

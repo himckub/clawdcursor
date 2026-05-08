@@ -194,6 +194,16 @@ interface LogEntry {
 const MAX_LOGS = 200;
 const logBuffer: LogEntry[] = [];
 
+/**
+ * Read-only accessor for the captured log buffer. Used by the MCP
+ * `logs_recent` tool (v0.9 PR7.2) to share the same in-memory buffer
+ * the legacy /logs route reads. Returns a snapshot — callers must not
+ * mutate.
+ */
+export function getServerLogBuffer(): LogEntry[] {
+  return logBuffer.slice();
+}
+
 const MAX_LOG_MSG_LEN = 500;
 
 function addLog(level: LogEntry['level'], message: string): void {

@@ -338,7 +338,7 @@ program
     let startToolCtx: any = null;
     try {
       const { createToolServer } = await import('./tool-server');
-      const { requireAuth } = await import('./server');
+      const { requireAuth, getServerLogBuffer } = await import('./server');
       const { getPlatform } = await import('./v2/platform');
       // Resolve the platform adapter eagerly — the unified pipeline already
       // uses it, so reusing the same instance keeps OS state consistent
@@ -350,6 +350,10 @@ program
         a11y: (agent as any).a11y,
         cdp: (agent as any).cdpDriver,
         platform: startPlatform,
+        // v0.9 PR7.2: agent + logBuffer wired so MCP tools can submit_task,
+        // abort_task, agent_status, logs_recent without going through REST.
+        agent,
+        getLogBuffer: getServerLogBuffer,
         getMouseScaleFactor: () => 1,  // start command uses agent's own scaling
         getScreenshotScaleFactor: () => agent.getDesktop().getScaleFactor(),
         ensureInitialized: async () => {},  // agent already initialized
