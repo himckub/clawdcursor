@@ -31,7 +31,7 @@ function saveFavorites(favorites: string[]): void {
   try {
     fs.writeFileSync(FAVORITES_PATH, JSON.stringify(favorites, null, 2), 'utf-8');
   } catch (err) {
-    throw new Error(`Failed to save favorites: ${(err as Error).message}`);
+    throw new Error(`Failed to save favorites: ${(err as Error).message}`, { cause: err });
   }
 }
 

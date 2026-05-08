@@ -749,7 +749,6 @@ export function getExtraTools(): ToolDefinition[] {
 
           // Reach into the compiled guide-loader so the same persisted JSON
           // shape is shared with the legacy /learn REST handler.
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
           const { saveLesson, loadGuide } = require('../guide-loader');
           const fsMod = await import('fs');
           const pathMod = await import('path');
