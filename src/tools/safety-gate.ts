@@ -1,4 +1,4 @@
-import { evaluate, isAllowed } from '../pipeline/safety/layer';
+import { evaluateInput } from '../pipeline/safety/layer';
 import type { ToolDefinition, ToolResult } from './types';
 
 function labelFromArgs(args: Record<string, unknown>): string | undefined {
@@ -14,27 +14,45 @@ function labelFromArgs(args: Record<string, unknown>): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-/** Enforce the shared safety evaluator before direct MCP/REST tool handlers run. */
+/**
+ * Enforce the canonical safety gate before direct MCP/REST tool handlers run.
+ *
+ * Uses `evaluateInput` from `pipeline/safety/layer` — the single source of
+ * truth for allow/block decisions.  Passes `tool.safetyTier` when present so
+ * the gate consults the tool's own declared tier rather than guessing from
+ * the name string.
+ *
+ * Returns null when the tool is allowed; returns an error ToolResult when
+ * blocked or requiring confirmation.
+ */
 export function evaluateToolCall(
   tool: ToolDefinition,
   args: Record<string, unknown>,
 ): ToolResult | null {
-  const decision = evaluate({
-    tool: tool.name,
+  const decision = evaluateInput({
+    toolName: tool.name,
     args,
-    targetLabel: labelFromArgs(args),
+    safetyTier: tool.safetyTier,
+    ctx: {
+      targetLabel: labelFromArgs(args),
+    },
   });
 
-  if (isAllowed(decision)) return null;
+  if (decision.allow) return null;
 
-  const reason = decision.decision === 'confirm' && 'reason' in decision
-    ? `requires user confirmation (${decision.reason})`
-    : 'reason' in decision
-      ? decision.reason
-      : `unexpected safety decision: ${decision.decision}`;
+  const suggestedAction = decision.suggestedAction ?? 'block';
+  const reason = decision.reason ?? `${tool.name} requires user approval`;
 
+  if (suggestedAction === 'block') {
+    return {
+      text: `${tool.name}: safety block - ${reason}`,
+      isError: true,
+    };
+  }
+
+  // confirm / warn path
   return {
-    text: `${tool.name}: safety ${decision.decision} - ${reason}`,
+    text: `${tool.name}: safety confirm - ${reason} (requires user confirmation)`,
     isError: true,
   };
 }

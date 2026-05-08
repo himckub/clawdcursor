@@ -16,6 +16,7 @@ export function getCdpTools(): ToolDefinition[] {
       parameters: {},
       category: 'browser',
       compactGroup: 'browser',
+      safetyTier: 1,
       handler: async (_params, ctx) => {
         try { await ctx.cdp.disconnect(); } catch { /* ignore */ }
         const ok = await ctx.cdp.connect();
@@ -34,6 +35,7 @@ export function getCdpTools(): ToolDefinition[] {
       parameters: {},
       category: 'browser',
       compactGroup: 'browser',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         if (!(await ctx.cdp.isConnected())) return { text: 'Not connected to CDP. Call cdp_connect first.', isError: true };
         const context = await ctx.cdp.getPageContext();
@@ -50,6 +52,7 @@ export function getCdpTools(): ToolDefinition[] {
       },
       category: 'browser',
       compactGroup: 'browser',
+      safetyTier: 0,
       handler: async ({ selector, maxLength }, ctx) => {
         if (!(await ctx.cdp.isConnected())) return { text: 'Not connected to CDP. Call cdp_connect first.', isError: true };
         const text = await ctx.cdp.readText(selector ?? 'body', maxLength ?? 3000);
@@ -66,6 +69,7 @@ export function getCdpTools(): ToolDefinition[] {
       },
       category: 'browser',
       compactGroup: 'browser',
+      safetyTier: 1,
       handler: async ({ selector, text }, ctx) => {
         if (!(await ctx.cdp.isConnected())) return { text: 'Not connected to CDP. Call cdp_connect first.', isError: true };
         if (!selector && !text) return { text: 'Provide either selector or text parameter.', isError: true };
@@ -87,6 +91,7 @@ export function getCdpTools(): ToolDefinition[] {
       },
       category: 'browser',
       compactGroup: 'browser',
+      safetyTier: 1,
       handler: async ({ selector, label, text }, ctx) => {
         if (!(await ctx.cdp.isConnected())) return { text: 'Not connected to CDP. Call cdp_connect first.', isError: true };
         if (!selector && !label) return { text: 'Provide either selector or label parameter.', isError: true };
@@ -107,6 +112,7 @@ export function getCdpTools(): ToolDefinition[] {
       },
       category: 'browser',
       compactGroup: 'browser',
+      safetyTier: 1,
       handler: async ({ selector, value }, ctx) => {
         if (!(await ctx.cdp.isConnected())) return { text: 'Not connected to CDP. Call cdp_connect first.', isError: true };
         const result = await ctx.cdp.selectOption(selector, value);
@@ -122,6 +128,7 @@ export function getCdpTools(): ToolDefinition[] {
       },
       category: 'browser',
       compactGroup: 'browser',
+      safetyTier: 3,
       handler: async ({ javascript }, ctx) => {
         if (!(await ctx.cdp.isConnected())) return { text: 'Not connected to CDP. Call cdp_connect first.', isError: true };
         try {
@@ -143,6 +150,7 @@ export function getCdpTools(): ToolDefinition[] {
       },
       category: 'browser',
       compactGroup: 'browser',
+      safetyTier: 0,
       handler: async ({ selector, timeout }, ctx) => {
         if (!(await ctx.cdp.isConnected())) return { text: 'Not connected to CDP. Call cdp_connect first.', isError: true };
         const result = await ctx.cdp.waitForSelector(selector, timeout ?? 10000);
@@ -156,6 +164,7 @@ export function getCdpTools(): ToolDefinition[] {
       parameters: {},
       category: 'browser',
       compactGroup: 'browser',
+      safetyTier: 0,
       handler: async () => {
         try {
           const resp = await fetch(`http://127.0.0.1:${DEFAULT_CDP_PORT}/json`);
@@ -178,6 +187,7 @@ export function getCdpTools(): ToolDefinition[] {
       },
       category: 'browser',
       compactGroup: 'browser',
+      safetyTier: 1,
       handler: async ({ target }, ctx) => {
         if (!(await ctx.cdp.isConnected())) return { text: 'Not connected to CDP. Call cdp_connect first.', isError: true };
         const ok = await ctx.cdp.switchTab(target);
@@ -199,6 +209,7 @@ export function getCdpTools(): ToolDefinition[] {
       },
       category: 'browser',
       compactGroup: 'browser',
+      safetyTier: 1,
       handler: async ({ direction, amount }, ctx) => {
         if (!(await ctx.cdp.isConnected())) return { text: 'Not connected to CDP. Call cdp_connect first.', isError: true };
         const pixels = (amount ?? 500) * (direction === 'down' ? 1 : -1);

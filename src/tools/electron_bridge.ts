@@ -163,6 +163,7 @@ export function getElectronBridgeTools(): ToolDefinition[] {
       parameters: {},
       category: 'perception',
       compactGroup: 'system',
+      safetyTier: 0,
       handler: async (_params, ctx: ToolContext): Promise<ToolResult> => {
         await ctx.ensureInitialized();
         if (!ctx.platform) {
@@ -212,6 +213,7 @@ export function getElectronBridgeTools(): ToolDefinition[] {
       },
       category: 'orchestration',
       compactGroup: 'system',
+      safetyTier: 3,
       handler: async ({ appName, port }, ctx: ToolContext): Promise<ToolResult> => {
         await ctx.ensureInitialized();
         if (!ctx.platform) {

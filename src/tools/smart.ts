@@ -58,6 +58,7 @@ export function getSmartTools(): ToolDefinition[] {
         },
       },
       category: 'perception',
+      safetyTier: 0,
       handler: async (params, ctx) => {
         await ctx.ensureInitialized();
         const scope = (params.scope as string) || 'window';
@@ -191,6 +192,7 @@ export function getSmartTools(): ToolDefinition[] {
         },
       },
       category: 'orchestration',
+      safetyTier: 1,
       handler: async (params, ctx) => {
         await ctx.ensureInitialized();
         const target = params.target as string;
@@ -421,6 +423,7 @@ export function getSmartTools(): ToolDefinition[] {
         },
       },
       category: 'keyboard',
+      safetyTier: 1,
       handler: async (params, ctx) => {
         await ctx.ensureInitialized();
         const text = params.text as string;
@@ -541,6 +544,7 @@ export function getSmartTools(): ToolDefinition[] {
       },
       category: 'window',
       compactGroup: 'accessibility',
+      safetyTier: 1,
       handler: async (params, ctx) => {
         await ctx.ensureInitialized();
 

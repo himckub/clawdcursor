@@ -248,6 +248,7 @@ export function getCompactTools(): ToolDefinition[] {
         'Prefer `accessibility` for named targets; use `computer` only when you need pixel-level control.',
       parameters: buildCompoundSchema(COMPUTER_ACTIONS),
       category: 'orchestration',
+      safetyTier: 1,
       handler: (args, ctx) => dispatchCompound('computer', COMPUTER_ACTIONS, args, ctx),
     },
 
@@ -259,6 +260,7 @@ export function getCompactTools(): ToolDefinition[] {
         'Always preferred over `computer.click(x,y)` when the target has a name — more reliable across DPI, window resize, layout shifts.',
       parameters: buildCompoundSchema(ACCESSIBILITY_ACTIONS),
       category: 'perception',
+      safetyTier: 0,
       handler: (args, ctx) => dispatchCompound('accessibility', ACCESSIBILITY_ACTIONS, args, ctx),
     },
 
@@ -269,6 +271,7 @@ export function getCompactTools(): ToolDefinition[] {
         `Pick an action: ${actionCatalog(WINDOW_ACTIONS)}.`,
       parameters: buildCompoundSchema(WINDOW_ACTIONS),
       category: 'window',
+      safetyTier: 1,
       handler: (args, ctx) => dispatchCompound('window', WINDOW_ACTIONS, args, ctx),
     },
 
@@ -279,6 +282,7 @@ export function getCompactTools(): ToolDefinition[] {
         `Pick an action: ${actionCatalog(SYSTEM_ACTIONS)}.`,
       parameters: buildCompoundSchema(SYSTEM_ACTIONS),
       category: 'orchestration',
+      safetyTier: 1,
       handler: (args, ctx) => dispatchCompound('system', SYSTEM_ACTIONS, args, ctx),
     },
 
@@ -289,6 +293,7 @@ export function getCompactTools(): ToolDefinition[] {
         `Pick an action: ${actionCatalog(BROWSER_ACTIONS)}.`,
       parameters: buildCompoundSchema(BROWSER_ACTIONS),
       category: 'browser',
+      safetyTier: 1,
       handler: (args, ctx) => dispatchCompound('browser', BROWSER_ACTIONS, args, ctx),
     },
 
@@ -306,6 +311,7 @@ export function getCompactTools(): ToolDefinition[] {
         },
       },
       category: 'orchestration',
+      safetyTier: 1,
       handler: (args, ctx) => dispatchCompound('task', [
         { action: '__task__', delegate: 'delegate_to_agent', argRemap: { instruction: 'task' } },
       ], { action: '__task__', ...args }, ctx),

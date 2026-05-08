@@ -38,6 +38,7 @@ export function getA11yTools(): ToolDefinition[] {
       },
       category: 'perception',
       compactGroup: 'accessibility',
+      safetyTier: 0,
       handler: async ({ processId }, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -72,6 +73,7 @@ export function getA11yTools(): ToolDefinition[] {
       parameters: {},
       category: 'window',
       compactGroup: 'window',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -92,6 +94,7 @@ export function getA11yTools(): ToolDefinition[] {
       parameters: {},
       category: 'window',
       compactGroup: 'window',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -116,6 +119,7 @@ export function getA11yTools(): ToolDefinition[] {
       parameters: {},
       category: 'window',
       compactGroup: 'accessibility',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -139,6 +143,7 @@ export function getA11yTools(): ToolDefinition[] {
       },
       category: 'window',
       compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
 
@@ -261,6 +266,7 @@ export function getA11yTools(): ToolDefinition[] {
       },
       category: 'window',
       compactGroup: 'accessibility',
+      safetyTier: 0,
       handler: async ({ name, controlType, automationId, processId }, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -290,6 +296,7 @@ export function getA11yTools(): ToolDefinition[] {
       parameters: {},
       category: 'clipboard',
       compactGroup: 'system',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -309,6 +316,7 @@ export function getA11yTools(): ToolDefinition[] {
       },
       category: 'clipboard',
       compactGroup: 'system',
+      safetyTier: 1,
       handler: async ({ text }, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -329,6 +337,7 @@ export function getA11yTools(): ToolDefinition[] {
         title: { type: 'string', description: 'Window title substring to match', required: false },
       },
       category: 'window',
+      safetyTier: 2,
       handler: async ({ processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
 

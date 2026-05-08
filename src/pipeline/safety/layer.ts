@@ -30,6 +30,69 @@ export type Decision =
   | { decision: 'confirm'; tier: Tier; reason: string }
   | { decision: 'block'; tier: Tier; reason: string };
 
+// ── PR6: canonical SafetyDecision + evaluate() signature ────────────────────
+
+/**
+ * Numeric safety tier used on `ToolDefinition.safetyTier` and returned by
+ * the PR6 canonical `evaluate()` signature.
+ *
+ *   0 — read-only  (screenshot, a11y snapshot …)
+ *   1 — neutral    (click, type, scroll — reversible)
+ *   2 — mutation   (close_window, write_clipboard …)
+ *   3 — destructive (cdp_evaluate, relaunch_with_cdp …)
+ */
+export type NumericTier = 0 | 1 | 2 | 3;
+
+/**
+ * Canonical safety decision returned by every call site.
+ *
+ * - `allow: true`  → proceed.
+ * - `allow: false` → block or ask for confirmation; inspect `suggestedAction`.
+ */
+export interface SafetyDecision {
+  allow: boolean;
+  reason?: string;
+  suggestedAction?: 'block' | 'warn' | 'proceed';
+  tier: NumericTier;
+}
+
+// ── Conversions ──────────────────────────────────────────────────────────────
+
+/** Map the legacy string Tier to a numeric tier. */
+function tierToNumeric(t: Tier): NumericTier {
+  switch (t) {
+    case 'read':        return 0;
+    case 'input':       return 1;
+    case 'destructive': return 2;
+    case 'system':      return 3;
+  }
+}
+
+/** Map a numeric tier back to the legacy Tier string for internal rule engine. */
+function numericToTierString(n: NumericTier): Tier {
+  switch (n) {
+    case 0: return 'read';
+    case 1: return 'input';
+    case 2: return 'destructive';
+    case 3: return 'system';
+  }
+}
+
+/** Convert the internal `Decision` to the canonical `SafetyDecision`. */
+function toSafetyDecision(d: Decision): SafetyDecision {
+  const tier = tierToNumeric(d.tier);
+  if (d.decision === 'allow') {
+    return { allow: true, tier, suggestedAction: 'proceed' };
+  }
+  if (d.decision === 'block') {
+    return { allow: false, reason: d.reason, tier, suggestedAction: 'block' };
+  }
+  // confirm
+  return { allow: false, reason: d.reason, tier, suggestedAction: 'warn' };
+}
+
+// ── End PR6 additions ────────────────────────────────────────────────────────
+
 /** What the evaluator sees. Tool name is CANONICAL — not a description. */
 export interface EvaluationContext {
   /** Canonical tool / action name (e.g. "mouse_click", "a11y_set_value"). */
@@ -49,6 +112,13 @@ export interface EvaluationContext {
    * (current behaviour). Pattern-based; works for any model + any app.
    */
   userTaskText?: string;
+  /**
+   * PR6: explicit numeric safety tier from the tool definition. When
+   * present, this overrides the TOOL_TIER name-lookup table so the gate
+   * consults the tool's own declared tier rather than guessing from the
+   * tool name string.
+   */
+  toolSafetyTier?: NumericTier;
 }
 
 /**
@@ -303,13 +373,28 @@ function unpackCompoundTool(tool: string, args: Record<string, unknown>): string
 /**
  * Evaluate an action. Pure function — no side effects other than the
  * `safety.decision` audit log.
+ *
+ * When `ctx.toolSafetyTier` is provided (set from `ToolDefinition.safetyTier`),
+ * it overrides the TOOL_TIER name-lookup for the base tier so the gate
+ * uses the tool's own declared tier rather than guessing from the name.
+ * Blocked-key and cdp_evaluate checks still run unconditionally.
  */
 export function evaluate(ctx: EvaluationContext): Decision {
   // Unpack compound tool calls (vision agent's mouse/keyboard/window)
   // into the canonical granular name so tier lookup hits the same map
   // that drives granular tools.
   const canonicalTool = unpackCompoundTool(ctx.tool, ctx.args);
-  const tier: Tier = TOOL_TIER[canonicalTool] ?? 'input';
+  // PR6: prefer the tool's declared safetyTier; fall back to name lookup.
+  // IMPORTANT: when the surface tool is a compound (canonicalTool !== ctx.tool),
+  // the specific action may map to a HIGHER tier than the surface default
+  // (e.g. browser({action:'evaluate'}) → cdp_evaluate → 'system'). In that
+  // case we always use the canonical TOOL_TIER so the compound unpack works
+  // correctly. The toolSafetyTier override only applies to granular tools where
+  // no further unpacking occurs.
+  const isCompoundUnpacked = canonicalTool !== ctx.tool;
+  const tier: Tier = (!isCompoundUnpacked && ctx.toolSafetyTier !== undefined)
+    ? numericToTierString(ctx.toolSafetyTier)
+    : (TOOL_TIER[canonicalTool] ?? 'input');
   const correlationId = getCorrelationId();
 
   const emit = (decision: Decision) => {
@@ -416,4 +501,46 @@ export function evaluate(ctx: EvaluationContext): Decision {
  */
 export function isAllowed(d: Decision): boolean {
   return d.decision === 'allow';
+}
+
+// ── PR6: canonical evaluate() signature ─────────────────────────────────────
+
+/**
+ * Canonical single safety gate used by every call site (PR6).
+ *
+ * Accepts the PR6 interface shape:
+ *   { toolName, args, ctx? }
+ *
+ * Returns a `SafetyDecision` with `allow: boolean` so callers don't need to
+ * inspect the legacy `decision` string.  The gate is the ONLY place that
+ * decides allow/block — no inline `if (toolName === 'desktop_screenshot')`
+ * branching anywhere else.
+ *
+ * Call sites:
+ *   1. `src/pipeline/agent/agent.ts`   — agent loop, every tool call
+ *   2. `src/tools/safety-gate.ts`      — MCP wrapper + REST execute middleware
+ *
+ * The `safetyTier` field is read from the tool's `ToolDefinition.safetyTier`
+ * by the caller before passing here; when absent the gate falls back to the
+ * internal TOOL_TIER name-lookup table.
+ */
+export function evaluateInput(input: {
+  toolName: string;
+  args: Record<string, unknown>;
+  safetyTier?: NumericTier;
+  ctx?: {
+    targetLabel?: string;
+    activeApp?: string;
+    userIntent?: string;
+  };
+}): SafetyDecision {
+  const legacyCtx: EvaluationContext = {
+    tool: input.toolName,
+    args: input.args,
+    targetLabel: input.ctx?.targetLabel,
+    activeApp: input.ctx?.activeApp,
+    userTaskText: input.ctx?.userIntent,
+    toolSafetyTier: input.safetyTier,
+  };
+  return toSafetyDecision(evaluate(legacyCtx));
 }

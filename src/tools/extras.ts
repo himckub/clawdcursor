@@ -51,6 +51,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'mouse',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ dx, dy }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_move_relative');
@@ -69,6 +70,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'mouse',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_middle_click');
@@ -87,6 +89,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'mouse',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_triple_click');
@@ -109,6 +112,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'mouse',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ button }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_down');
@@ -129,6 +133,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'mouse',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ button }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_up');
@@ -151,6 +156,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'mouse',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y, direction, amount }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_scroll_horizontal');
@@ -179,6 +185,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'mouse',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ path }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_drag_stepped');
@@ -219,6 +226,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'keyboard',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ key }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('key_down');
@@ -235,6 +243,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'keyboard',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ key }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('key_up');
@@ -257,6 +266,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'window',
       compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('maximize_window');
@@ -280,6 +290,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'window',
       compactGroup: 'window',
+      safetyTier: 2,
       handler: async ({ processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('minimize_window_to_taskbar');
@@ -303,6 +314,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'window',
       compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('restore_window');
@@ -327,6 +339,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'window',
       compactGroup: 'window',
+      safetyTier: 2,
       handler: async ({ processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('close_window');
@@ -354,6 +367,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'window',
       compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ x, y, width, height, processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('resize_window');
@@ -378,6 +392,7 @@ export function getExtraTools(): ToolDefinition[] {
       parameters: {},
       category: 'window',
       compactGroup: 'window',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('list_displays');
@@ -401,6 +416,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'perception',
       compactGroup: 'accessibility',
+      safetyTier: 1,
       handler: async ({ name, controlType, processId }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('focus_element');
@@ -430,6 +446,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'perception',
       compactGroup: 'accessibility',
+      safetyTier: 0,
       handler: async ({ name, controlType, processId, timeoutMs, intervalMs }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('wait_for_element');
@@ -458,6 +475,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'orchestration',
       compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ path: filePath }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('open_file');
@@ -492,6 +510,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'orchestration',
       compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ url }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('open_url');
@@ -523,6 +542,7 @@ export function getExtraTools(): ToolDefinition[] {
       parameters: {},
       category: 'perception',
       compactGroup: 'system',
+      safetyTier: 0,
       handler: async () => {
         const now = new Date();
         return {
@@ -555,6 +575,7 @@ export function getExtraTools(): ToolDefinition[] {
       },
       category: 'window',
       compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ index, direction }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('switch_tab_os');
@@ -578,6 +599,7 @@ export function getExtraTools(): ToolDefinition[] {
       parameters: {},
       category: 'keyboard',
       compactGroup: 'system',
+      safetyTier: 1,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('undo_last');

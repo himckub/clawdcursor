@@ -69,6 +69,7 @@ export function getOrchestrationTools(): ToolDefinition[] {
       },
       category: 'orchestration',
       compactGroup: 'task',
+      safetyTier: 1,
       handler: async ({ task, timeout }) => {
         const timeoutMs = (timeout ?? 300) * 1000;
         const start = Date.now();
@@ -117,6 +118,7 @@ export function getOrchestrationTools(): ToolDefinition[] {
       },
       category: 'orchestration',
       compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ name }, ctx) => {
         await ctx.ensureInitialized();
         try {
@@ -151,6 +153,7 @@ export function getOrchestrationTools(): ToolDefinition[] {
       },
       category: 'orchestration',
       compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ url }, ctx) => {
         await ctx.ensureInitialized();
         if (await ctx.cdp.isConnected()) {
@@ -206,6 +209,7 @@ export function getOrchestrationTools(): ToolDefinition[] {
       },
       category: 'orchestration',
       compactGroup: 'computer',
+      safetyTier: 0,
       handler: async ({ seconds }) => {
         await new Promise(r => setTimeout(r, seconds * 1000));
         return { text: `Waited ${seconds}s` };

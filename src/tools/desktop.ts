@@ -23,6 +23,7 @@ export function getDesktopTools(): ToolDefinition[] {
       parameters: {},
       category: 'perception',
       compactGroup: 'computer',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         const frame = await ctx.desktop.captureForLLM();
@@ -45,6 +46,7 @@ export function getDesktopTools(): ToolDefinition[] {
       },
       category: 'perception',
       compactGroup: 'computer',
+      safetyTier: 0,
       handler: async ({ x, y, width, height }, ctx) => {
         await ctx.ensureInitialized();
         const sf = ctx.getScreenshotScaleFactor();
@@ -66,6 +68,7 @@ export function getDesktopTools(): ToolDefinition[] {
       parameters: {},
       category: 'perception',
       compactGroup: 'window',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         const size = ctx.desktop.getScreenSize();
@@ -95,6 +98,7 @@ export function getDesktopTools(): ToolDefinition[] {
       },
       category: 'mouse',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y }, ctx) => {
         await ctx.ensureInitialized();
         const sf = ctx.getMouseScaleFactor();
@@ -114,6 +118,7 @@ export function getDesktopTools(): ToolDefinition[] {
       },
       category: 'mouse',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y }, ctx) => {
         await ctx.ensureInitialized();
         const sf = ctx.getMouseScaleFactor();
@@ -132,6 +137,7 @@ export function getDesktopTools(): ToolDefinition[] {
       },
       category: 'mouse',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y }, ctx) => {
         await ctx.ensureInitialized();
         const sf = ctx.getMouseScaleFactor();
@@ -150,6 +156,7 @@ export function getDesktopTools(): ToolDefinition[] {
       },
       category: 'mouse',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y }, ctx) => {
         await ctx.ensureInitialized();
         const sf = ctx.getMouseScaleFactor();
@@ -169,6 +176,7 @@ export function getDesktopTools(): ToolDefinition[] {
       },
       category: 'mouse',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y, direction, amount }, ctx) => {
         await ctx.ensureInitialized();
         const sf = ctx.getMouseScaleFactor();
@@ -194,6 +202,7 @@ export function getDesktopTools(): ToolDefinition[] {
       },
       category: 'mouse',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ startX, startY, endX, endY, x1, y1, x2, y2 }, ctx) => {
         await ctx.ensureInitialized();
         const sx = startX ?? x1;
@@ -220,6 +229,7 @@ export function getDesktopTools(): ToolDefinition[] {
       },
       category: 'keyboard',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ text }, ctx) => {
         await ctx.ensureInitialized();
         const active = await ctx.a11y.getActiveWindow();
@@ -242,6 +252,7 @@ export function getDesktopTools(): ToolDefinition[] {
       },
       category: 'keyboard',
       compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ key }, ctx) => {
         await ctx.ensureInitialized();
         const lower = (key as string).toLowerCase().replace(/\s+/g, '');

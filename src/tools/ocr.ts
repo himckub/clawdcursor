@@ -25,6 +25,7 @@ export function getOcrTools(): ToolDefinition[] {
       parameters: {},
       category: 'perception',
       compactGroup: 'system',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         const engine = getOcrEngine();

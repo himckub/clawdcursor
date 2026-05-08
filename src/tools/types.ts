@@ -74,6 +74,18 @@ export interface ToolDefinition {
    * (e.g. smart_read, smart_click, smart_type, minimize_window).
    */
   compactGroup?: CompactGroup;
+  /**
+   * Safety tier for the canonical safety gate.
+   *
+   *   0 — read-only (screenshot, a11y snapshot, clipboard read …)
+   *   1 — neutral input (click, type, scroll — reversible, no irreversible side-effect)
+   *   2 — mutation (close window, write clipboard, navigate …)
+   *   3 — destructive / system (cdp_evaluate arbitrary JS, relaunch_with_cdp …)
+   *
+   * When omitted the gate falls back to the `TOOL_TIER` name-lookup table in
+   * `pipeline/safety/layer.ts` for backward-compatibility.
+   */
+  safetyTier?: 0 | 1 | 2 | 3;
   /** The handler function */
   handler: (params: Record<string, any>, ctx: ToolContext) => Promise<ToolResult>;
 }
