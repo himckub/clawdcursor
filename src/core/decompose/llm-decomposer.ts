@@ -17,8 +17,22 @@ Rules:
   Bad:  "Type the user's name"
   Good: "type John Smith"
 - Subtasks must be in execution order.
-- No more than 8 subtasks; if you need more, the task is too complex and you should collapse steps.
-- Verbs to prefer: open, focus, click, type, press, navigate, select, scroll, wait, save, send.
+- Aim for 3-6 subtasks. Hard cap is 8. If you'd need more, COLLAPSE — each
+  subtask runs through its own perception+plan+act loop, so chunky steps
+  cost less than micro-steps.
+- Each subtask must be SELF-CONTAINED. The downstream agent sees ONLY this
+  one string, not the original task or prior subtasks. So every subtask must
+  carry enough context to execute correctly on its own.
+    Bad task split:  ["open Edge", "navigate to outlook.office.com", "wait for Outlook to load", "click compose"]
+    Why bad: subtask 3 "wait for Outlook to load" — the agent has no idea this means the WEB page in Edge.
+              It will see no desktop Outlook running and incorrectly call open_app("Outlook").
+    Good split:      ["navigate to https://outlook.office.com in the default browser", "click the New / Compose button on outlook.office.com"]
+    Why good: each step names what app/page it's acting on, no orphan "wait" steps, no scaffolding.
+- DROP "wait for X to load" subtasks entirely. The downstream agent's
+  perception loop already polls the screen — explicit waits are scaffolding
+  the OS handles for free, and they confuse the agent in isolation.
+- Verbs to prefer: open, focus, click, type, press, navigate, select, scroll, save, send.
+  Avoid: wait (redundant — see above), check, verify (the verifier handles those).
 - Do NOT invent information the task didn't provide. If an email address or value is missing, leave the subtask at the level of "type the recipient email".
 
 INTERPRET INDEFINITE PHRASES (CRITICAL — agents below this layer take strings literally):

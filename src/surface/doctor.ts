@@ -500,15 +500,31 @@ export async function runDoctor(opts: {
       const activeWin = await smokeA11y.getActiveWindow();
       const windowTitle = activeWin?.title || 'Terminal';
 
-      // Send window title to text model, ask it to confirm
-      const smokeInstruction = `The active window is titled "${windowTitle}". Reply with exactly: SMOKE_PASS`;
+      // Self-test prompt — explicit framing so safety-trained models (Anthropic
+      // Haiku/Sonnet, GPT-4o-mini) don't decline thinking it's prompt
+      // injection. Earlier "Reply with exactly: SMOKE_PASS" without context
+      // had Sonnet politely refusing with "I appreciate your message but…".
+      const smokeSystem =
+        'You are running a startup self-test for the clawdcursor desktop-automation CLI. ' +
+        'The user already configured your API key and is verifying that round-trip calls work. ' +
+        'For this self-test ONLY, follow the literal-reply instruction below — no commentary, no questions, no safety addendum. ' +
+        'A conformant response is one short token. Anything else fails the test.';
+      const smokeInstruction =
+        `Self-test ping. The active window title on this machine right now is "${windowTitle}". ` +
+        `To confirm the round-trip works, respond with exactly this token and nothing else: SMOKE_PASS`;
 
       let smokeText = '';
       if (smokeProvider.openaiCompat) {
         const res = await fetch(`${smokeProvider.baseUrl}/chat/completions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...smokeProvider.authHeader(smokeKey) },
-          body: JSON.stringify({ model: bestText.model, max_tokens: 15, temperature: 0, messages: [{ role: 'user', content: smokeInstruction }] }),
+          body: JSON.stringify({
+            model: bestText.model, max_tokens: 15, temperature: 0,
+            messages: [
+              { role: 'system', content: smokeSystem },
+              { role: 'user', content: smokeInstruction },
+            ],
+          }),
           signal: AbortSignal.timeout(8000),
         });
         const data = await res.json() as any;
@@ -517,7 +533,11 @@ export async function runDoctor(opts: {
         const res = await fetch(`${smokeProvider.baseUrl}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...smokeProvider.authHeader(smokeKey), ...smokeProvider.extraHeaders },
-          body: JSON.stringify({ model: bestText.model, max_tokens: 15, messages: [{ role: 'user', content: smokeInstruction }] }),
+          body: JSON.stringify({
+            model: bestText.model, max_tokens: 15,
+            system: smokeSystem,
+            messages: [{ role: 'user', content: smokeInstruction }],
+          }),
           signal: AbortSignal.timeout(8000),
         });
         const data = await res.json() as any;
