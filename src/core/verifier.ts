@@ -69,19 +69,29 @@ export class GroundTruthVerifier implements Verifier {
 
     // Hard rules:
     //  - If anti-pattern fired, fail regardless of other signals.
-    //  - At least ONE structural-change signal must have fired. Drawing
-    //    tasks legitimately leave window/focus unchanged (you draw IN a
-    //    canvas inside an open Paint window), so for `'draw'` tasks the
-    //    pixel-diff signal alone is sufficient. For all other task types
-    //    we still require pixel/window/focus to have flipped — typing
-    //    that left no on-screen trace is suspicious.
+    //  - For tasks that mutate the screen, at least ONE structural-change
+    //    signal must have fired (drawing requires pixel change, typing
+    //    requires pixel or focus, etc.). Without this gate, a "done" call
+    //    that did nothing would coast on a confidence vote.
+    //  - For IDEMPOTENT tasks (open/create/new/setup/launch) the goal
+    //    state may already match: opening an already-open app, creating
+    //    a new canvas in just-launched Paint, opening a tab in a fresh
+    //    browser. Pixel/window/focus all stay the same and that's CORRECT.
+    //    For these, we trust task_assertions + the agent's textual evidence
+    //    and skip the structural-change requirement.
     const inferredTaskType = opts.taskType ?? this.inferTaskType(opts.task);
+    const isIdempotentTask = isLikelyIdempotent(opts.task);
     let pass = confidence >= 0.6;
     if (!antiSig.value) pass = false;
     if (inferredTaskType === 'draw') {
-      // Draw: only require ANY pixel change (per the lower threshold in
+      // Draw: require ANY pixel change (per the lower threshold in
       // signalPixelDiff). Window/focus reasonably stay still.
       if (!pixel.value) pass = false;
+    } else if (isIdempotentTask) {
+      // Open/create/new/setup verbs: zero structural change is legitimate
+      // when the goal state already holds. task_assertions + anti-pattern
+      // carry the verdict; pixel/window/focus are advisory only.
+      // (No additional hard gate.)
     } else {
       if (!pixel.value && !windowSig.value && !focus.value) pass = false;
     }
@@ -629,6 +639,8 @@ export class GroundTruthVerifier implements Verifier {
   }
 
   /** Extract quoted text from a task (for type-text or compose tasks). */
+  // (helper functions live below the class — see file end)
+
   private extractQuotedContent(task: string): string | null {
     const quoted = task.match(/["'](.+?)["']/);
     if (quoted) return quoted[1];
@@ -649,4 +661,35 @@ export class GroundTruthVerifier implements Verifier {
       .split(/\s+/)
       .filter(w => w.length > 3 && !NOISE.has(w) && !/^\d+$/.test(w));
   }
+}
+
+/**
+ * Heuristic: does this subtask describe an action whose goal state may
+ * already be satisfied (zero structural change is legitimate)?
+ *
+ * Used by the verifier to relax its "at least one structural change must
+ * have fired" hard rule. Without this, idempotent steps like
+ *   "create a new canvas in Paint"   (Paint already opened with a blank canvas)
+ *   "open a new tab in Chrome"       (Chrome already opened with a new tab)
+ *   "create a new document"          (Word already opened blank)
+ * get marked as failed because pixel/window/focus didn't change — even
+ * though the goal IS met. The decomposer prompt now drops most of these,
+ * but this guard catches the cases that slip through.
+ *
+ * Intentionally a flat regex, not a full grammar — false positives just
+ * mean we trust the agent's done() claim a bit more for that subtask,
+ * which is the right default anyway. (We still require anti_pattern=true
+ * and confidence ≥ 0.6, so the agent can't lie its way to success.)
+ */
+function isLikelyIdempotent(task: string): boolean {
+  const t = task.toLowerCase().trim();
+  // Patterns: "create/open/start/launch a new <thing>" or "open <app>" or
+  // "make sure <app> is open/running/ready"
+  return (
+    /^(?:create|open|start|launch|make|new)\s+(?:a\s+)?(?:new\s+)?(?:blank\s+)?(?:canvas|document|sheet|tab|file|window|workbook|spreadsheet|note|notebook|presentation|slide)\b/.test(t)
+    || /\bnew\s+(?:canvas|document|sheet|tab|file|window|workbook|note|notebook|presentation)\b/.test(t)
+    || /^(?:open|launch|start)\s+\w+$/.test(t)                            // "open paint", "launch excel"
+    || /\b(?:already|make sure).+(?:open|running|ready|loaded)\b/.test(t) // "make sure paint is open"
+    || /\bwait for\b.+\b(?:load|ready|open)\b/.test(t)                     // residual "wait for X to load"
+  );
 }

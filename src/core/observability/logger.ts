@@ -364,11 +364,23 @@ function prettyEmit(level: Level, event: string, meta?: Record<string, unknown>)
     const pathStr = String(meta?.path ?? '');
     const costUsd = Number(meta?.costUsd ?? 0);
     const durationMs = Number(meta?.durationMs ?? 0);
+    const subTotal = meta?.subtasksTotal !== undefined ? Number(meta.subtasksTotal) : null;
+    const subDone = meta?.subtasksCompleted !== undefined ? Number(meta.subtasksCompleted) : null;
+    const subSoft = meta?.subtasksSoftFailed !== undefined ? Number(meta.subtasksSoftFailed) : 0;
+    const abortReason = meta?.abortReason ? String(meta.abortReason) : '';
     const icon = success ? colorize('✅', C.green) : colorize('❌', C.red);
+    const verdict = success
+      ? colorize('done', C.bold)
+      : abortReason
+        ? `${colorize('failed', C.bold)} (${colorize(abortReason, C.red)})`
+        : colorize('failed', C.bold);
+    const subStr = subTotal !== null && subDone !== null
+      ? ` · ${subDone}/${subTotal} subtasks${subSoft > 0 ? ` (${subSoft} soft)` : ''}`
+      : '';
     const bar = colorize('━'.repeat(72), C.gray);
     process.stderr.write('\n');
     writePrettyContinuation(bar);
-    writePrettyLine(`  ${icon} ${colorize(success ? 'done' : 'failed', C.bold)} · path=${pathStr} · $${costUsd.toFixed(4)} · ${formatMs(durationMs)}`);
+    writePrettyLine(`  ${icon} ${verdict} · path=${pathStr}${subStr} · $${costUsd.toFixed(4)} · ${formatMs(durationMs)}`);
     writePrettyContinuation(bar);
     return;
   }

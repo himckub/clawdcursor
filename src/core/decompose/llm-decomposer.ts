@@ -31,6 +31,20 @@ Rules:
 - DROP "wait for X to load" subtasks entirely. The downstream agent's
   perception loop already polls the screen — explicit waits are scaffolding
   the OS handles for free, and they confuse the agent in isolation.
+- DROP "create a new canvas / new document / new sheet / new tab / new file"
+  subtasks when they immediately follow an "open <app>" step. Apps open
+  with a fresh blank state by default — Paint opens with a blank canvas,
+  Word opens with a blank document, browsers open with a new tab. Adding
+  a "create new X" subtask after "open X" creates a phantom no-op step
+  that the downstream verifier flags as failure (zero pixel change → false
+  negative), which can kill the chain before the actual work runs.
+    Bad:  ["open Paint", "create a new canvas in Paint", "draw a stickfigure"]
+    Good: ["open Paint", "draw a stickfigure"]
+    Bad:  ["open Notepad", "create a new document", "type Hello"]
+    Good: ["open Notepad", "type Hello"]
+  Only emit a "create new X" step when the user EXPLICITLY says they're
+  working in an already-open instance (e.g. "in my open Word doc, start a
+  new section" — that's a real new-section step, not scaffolding).
 - Verbs to prefer: open, focus, click, type, press, navigate, select, scroll, save, send.
   Avoid: wait (redundant — see above), check, verify (the verifier handles those).
 - Do NOT invent information the task didn't provide. If an email address or value is missing, leave the subtask at the level of "type the recipient email".

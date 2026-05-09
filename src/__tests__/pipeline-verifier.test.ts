@@ -247,7 +247,13 @@ describe('Pipeline ground-truth verifier wiring', () => {
     expect(m.captureState).not.toHaveBeenCalled();
   });
 
-  it('all rungs verifier-rejected → pipeline reports failure with verifier_rejected', async () => {
+  it('all rungs verifier-rejected at LOW confidence → soft-fail, chain continues, single-subtask completes "successfully"', async () => {
+    // The mock returns confidence=0.2 for rejects, which is below the
+    // soft-fail threshold (< 0.5). Per the v0.9 soft-fail policy, low-
+    // confidence verifier rejections are treated as warnings, not failures —
+    // they're often false-negatives on idempotent operations like
+    // "create new canvas in Paint" where Paint launched with a blank canvas.
+    // The verifier still ran on every rung; the chain just doesn't abort.
     agentResultByRung.clear();
     agentResultByRung.set('blind', { success: true, exit: 'done' });
     agentResultByRung.set('hybrid', { success: true, exit: 'done' });
@@ -264,10 +270,46 @@ describe('Pipeline ground-truth verifier wiring', () => {
     });
 
     const result = await pipeline.run({ task: 'test task' });
-    expect(result.success).toBe(false);
-    // Three rungs, three verifier calls.
+    // Three rungs, three verifier calls — we still climb the ladder.
     expect(m.verifyWithFeedback).toHaveBeenCalledTimes(3);
-    // The trailing failure reason should mention verifier rejection somewhere.
+    // Soft-fail policy: low-confidence reject doesn't kill the chain.
+    expect(result.success).toBe(true);
+  });
+
+  it('high-confidence verifier rejection (≥ 0.5) DOES abort the chain', async () => {
+    // Override the mock to return a high-confidence rejection so the
+    // soft-fail threshold doesn't apply.
+    agentResultByRung.clear();
+    agentResultByRung.set('blind', { success: true, exit: 'done' });
+    agentResultByRung.set('hybrid', { success: true, exit: 'done' });
+    agentResultByRung.set('vision', { success: true, exit: 'done' });
+
+    const verifyWithFeedback = vi.fn(async (): Promise<ReflectionFeedback> => ({
+      pass: false,
+      confidence: 0.85, // strong, structural rejection
+      causes: [{ kind: 'wrong_window_focused', actual: 'OtherApp' }],
+      hint: 'Wrong window focused (high confidence)',
+    }));
+    const verifier: Verifier = {
+      verify: vi.fn(async () => ({
+        pass: false, confidence: 0.85, reason: 'Failed: wrong window', signals: [],
+      })),
+      verifyWithFeedback,
+      captureState: vi.fn(async () => emptyState()),
+    };
+
+    const pipeline = new Pipeline({
+      adapter: makeAdapter(),
+      llm: {
+        text: { baseUrl: 'x', model: 'm', apiKey: 'k', isAnthropic: false },
+        vision: { baseUrl: 'x', model: 'v', apiKey: 'k', isAnthropic: false },
+      },
+      verifier,
+    });
+
+    const result = await pipeline.run({ task: 'test task' });
+    expect(result.success).toBe(false);
+    expect(verifyWithFeedback).toHaveBeenCalledTimes(3);
     expect(result.text.toLowerCase()).toContain('verifier');
   });
 });

@@ -292,6 +292,11 @@ export class Pipeline {
         subtasks: outerDecision.subtasks.length,
       });
 
+      // Track soft-fails so the footer can report e.g. "3/6 subtasks
+      // completed (1 soft-fail continued)" instead of pretending nothing
+      // failed. Hard fail still aborts; soft fail is a warning.
+      let subtaskSoftFails = 0;
+
       let subtasks = outerDecision.subtasks.length > 0
         ? outerDecision.subtasks
         : [input.task];
@@ -346,10 +351,21 @@ export class Pipeline {
 
       for (let i = 0; i < subtasks.length; i++) {
         if (isAborted()) {
-          return this.buildResult({
+          const result = this.buildResult({
             success: false, path: lastPath, costMeter, startedAt, correlationId,
             text: 'aborted', trace: aggregateTrace,
           });
+          log.info(EVENTS.PIPELINE_DONE, {
+            success: result.success,
+            path: result.path,
+            costUsd: result.costUsd,
+            durationMs: result.durationMs,
+            subtasksTotal: subtasks.length,
+            subtasksCompleted: i,
+            subtasksSoftFailed: subtaskSoftFails,
+            abortReason: 'aborted',
+          });
+          return result;
         }
 
         const subtask = subtasks[i];
@@ -373,16 +389,58 @@ export class Pipeline {
         lastPath = subResult.path;
 
         if (!subResult.success) {
-          log.warn('pipeline.subtask.failed_chain_abort', {
-            index: i + 1, subtask, path: subResult.path, reason: subResult.failureReason,
-          });
-          return this.buildResult({
-            success: false, path: subResult.path, costMeter, startedAt, correlationId,
-            text: subtasks.length > 1
-              ? `Subtask ${i + 1}/${subtasks.length} failed ("${subtask}"): ${subResult.text}`
-              : subResult.text,
-            trace: aggregateTrace,
-          });
+          // Soft-fail policy: a single subtask failing on a low-confidence
+          // verifier rejection shouldn't kill the whole chain. Common
+          // false-positive: "create a new canvas in Paint" right after Paint
+          // launched — zero pixel change, verifier says "no_pixel_change"
+          // at confidence ~0.1, but the goal state is already satisfied
+          // because Paint opened with a blank canvas. Legacy v0.7-0.8.11
+          // didn't have a verifier, so these idempotent no-ops just succeeded.
+          //
+          // Rule:
+          //   - failureReason='verifier_rejected' AND confidence<0.5
+          //     → log warning, mark soft-fail, CONTINUE chain.
+          //   - everything else (max_turns, give_up, error, anti-pattern,
+          //     high-confidence verifier reject) → ABORT chain (hard fail).
+          const isSoftVerifierReject =
+            subResult.failureReason === 'verifier_rejected'
+            && (subResult.verifierConfidence ?? 0) < 0.5;
+
+          if (isSoftVerifierReject) {
+            log.warn('pipeline.subtask.soft_fail_continue', {
+              index: i + 1, of: subtasks.length, subtask,
+              path: subResult.path,
+              reason: subResult.failureReason,
+              confidence: subResult.verifierConfidence,
+              note: 'low-confidence verifier rejection — likely idempotent no-op; chain continues',
+            });
+            subtaskSoftFails += 1;
+            // Don't update lastText with a failure message — the next
+            // subtask should see "what came before" as the agent's claim.
+            // (Already updated above at line 372 — no-op here.)
+          } else {
+            log.warn('pipeline.subtask.failed_chain_abort', {
+              index: i + 1, subtask, path: subResult.path, reason: subResult.failureReason,
+            });
+            const result = this.buildResult({
+              success: false, path: subResult.path, costMeter, startedAt, correlationId,
+              text: subtasks.length > 1
+                ? `Subtask ${i + 1}/${subtasks.length} failed ("${subtask}"): ${subResult.text}`
+                : subResult.text,
+              trace: aggregateTrace,
+            });
+            log.info(EVENTS.PIPELINE_DONE, {
+              success: result.success,
+              path: result.path,
+              costUsd: result.costUsd,
+              durationMs: result.durationMs,
+              subtasksTotal: subtasks.length,
+              subtasksCompleted: i,
+              subtasksSoftFailed: subtaskSoftFails,
+              abortReason: subResult.failureReason,
+            });
+            return result;
+          }
         }
 
         // Brief settle between subtasks so the next preprocess sees the
@@ -394,7 +452,7 @@ export class Pipeline {
       const result = this.buildResult({
         success: true, path: lastPath, costMeter, startedAt, correlationId,
         text: subtasks.length > 1
-          ? `All ${subtasks.length} subtasks completed. Last: ${lastText}`
+          ? `All ${subtasks.length} subtasks completed${subtaskSoftFails ? ` (${subtaskSoftFails} soft-fail continued)` : ''}. Last: ${lastText}`
           : lastText,
         trace: aggregateTrace,
       });
@@ -403,6 +461,9 @@ export class Pipeline {
         path: result.path,
         costUsd: result.costUsd,
         durationMs: result.durationMs,
+        subtasksTotal: subtasks.length,
+        subtasksCompleted: subtasks.length,
+        subtasksSoftFailed: subtaskSoftFails,
       });
       return result;
     });
@@ -533,6 +594,7 @@ export class Pipeline {
           // Demote this rung to a failure so the ladder climbs.
           attempt.success = false;
           attempt.failureReason = 'verifier_rejected';
+          attempt.verifierConfidence = verdict.confidence;
           attempt.text = `${attempt.text} (verifier rejected: ${verdict.reason})`;
           last = attempt;
           // Continue the loop — try the next rung.
@@ -867,6 +929,13 @@ interface StrategyResult {
   text: string;
   path: PipelineTaskResult['path'];
   failureReason?: string;
+  /** Verifier confidence (0..1) when failureReason === 'verifier_rejected'.
+   *  Used by the chain-abort policy to distinguish "verifier strongly says no"
+   *  (high confidence) from "verifier couldn't tell" (low confidence). The
+   *  latter shouldn't kill a multi-subtask chain on what's likely an
+   *  idempotent no-op (e.g. "create new canvas in Paint" when Paint just
+   *  opened with a blank canvas → zero pixel-change → low confidence). */
+  verifierConfidence?: number;
 }
 
 export type { TaskResult } from './pipeline-types';
