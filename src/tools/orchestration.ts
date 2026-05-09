@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import type { ToolDefinition } from './types';
 import { DEFAULT_CDP_PORT } from '../llm/browser-config';
+import { resolveAlias } from '../core/router/aliases';
 
 const execFileAsync = promisify(execFile);
 
@@ -132,35 +133,87 @@ export function getOrchestrationTools(): ToolDefinition[] {
 
     {
       name: 'open_app',
-      description: 'Open an application by name. Uses platform-native launch.',
+      description: 'Open an application by name. Uses the cross-OS app alias table + the PlatformAdapter\'s launchApp (UWP-aware on Windows, `open -a` on macOS, gtk-launch / xdg-open on Linux).',
       parameters: {
-        name: { type: 'string', description: 'Application name (e.g. "notepad", "calc", "mspaint")', required: true },
+        name: { type: 'string', description: 'Application name (e.g. "notepad", "calc", "mspaint", "Outlook", "Chrome")', required: true },
       },
       category: 'orchestration',
       compactGroup: 'window',
       safetyTier: 1,
       handler: async ({ name }, ctx) => {
         await ctx.ensureInitialized();
+        const rawName = String(name ?? '');
+        if (!rawName) {
+          return { text: 'open_app: `name` is required', isError: true };
+        }
+
+        // Resolve through the canonical alias table so "Notepad" / "notepad" /
+        // "Calculator" / "calc" all map to the right launch hints. The MCP
+        // open_app used to call `Start-Process <name>` directly, which fails
+        // for UWP apps (Calculator, Win11 Notepad) and is case-sensitive on
+        // PowerShell's Start-Process arg. The alias table + platform adapter
+        // is the same path the autonomous agent-loop uses.
+        const alias = resolveAlias(rawName);
+
+        // If we have a PlatformAdapter (we always do post-v0.9 init), use it.
+        // Falls back to the old execFile path only when the adapter isn't
+        // available (shouldn't happen in normal operation).
+        if (ctx.platform && typeof ctx.platform.launchApp === 'function') {
+          let launchName = rawName;
+          if (alias) {
+            if (process.platform === 'darwin') {
+              launchName = alias.macOSAppName ?? rawName;
+            } else if (process.platform === 'win32') {
+              launchName = alias.executable ?? rawName;
+            } else {
+              launchName = alias.executable?.replace(/\.exe$/i, '') ?? rawName;
+            }
+          }
+          try {
+            const res = await ctx.platform.launchApp(launchName, {
+              alwaysNewInstance: alias?.alwaysNewInstance,
+              uwpAppId: alias?.uwpAppId,
+              searchTerm: alias?.searchTerm
+                ?? (process.platform === 'darwin' ? alias?.macOSAppName : undefined),
+            });
+            ctx.a11y.invalidateCache();
+            return {
+              text: res?.title
+                ? `Opened "${rawName}" (pid=${res.pid}, window="${res.title}")`
+                : `Launched "${rawName}" (no window surfaced yet)`,
+            };
+          } catch (err: any) {
+            return { text: `Failed to launch "${rawName}": ${err?.message ?? err}`, isError: true };
+          }
+        }
+
+        // Fallback: pre-adapter path (kept for safety, should be unreachable).
         try {
           if (process.platform === 'win32') {
-            await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `Start-Process "${name}"`], { timeout: 10000 });
-          } else if (process.platform === 'darwin') {
-            await execFileAsync('open', ['-a', name], { timeout: 10000 });
-          } else {
-            // Linux: prefer desktop-aware launchers, then direct executable.
-            if (await commandExists('gtk-launch')) {
-              await execFileAsync('gtk-launch', [name], { timeout: 10000 });
-            } else if (await commandExists('xdg-open')) {
-              await execFileAsync('xdg-open', [name], { timeout: 10000 });
+            const exe = alias?.executable ?? rawName;
+            const uwpId = alias?.uwpAppId;
+            if (uwpId) {
+              await execFileAsync('explorer.exe', [`shell:AppsFolder\\${uwpId}`], { timeout: 10000 });
             } else {
-              await execFileAsync(name, [], { timeout: 10000 });
+              await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `Start-Process "${exe}"`], { timeout: 10000 });
+            }
+          } else if (process.platform === 'darwin') {
+            await execFileAsync('open', ['-a', alias?.macOSAppName ?? rawName], { timeout: 10000 });
+          } else {
+            const linuxName = alias?.executable?.replace(/\.exe$/i, '') ?? rawName;
+            if (await commandExists('gtk-launch')) {
+              await execFileAsync('gtk-launch', [linuxName], { timeout: 10000 });
+            } else if (await commandExists('xdg-open')) {
+              await execFileAsync('xdg-open', [linuxName], { timeout: 10000 });
+            } else {
+              await execFileAsync(linuxName, [], { timeout: 10000 });
             }
           }
           await new Promise(r => setTimeout(r, 2000));
           ctx.a11y.invalidateCache();
-          return { text: `Launched: ${name}` };
+          return { text: `Launched: ${rawName}` };
         } catch (err: any) {
-          return { text: `Failed to launch "${name}": ${err.message}`, isError: true };
+          return { text: `Failed to launch "${rawName}": ${err.message}`, isError: true };
         }
       },
     },

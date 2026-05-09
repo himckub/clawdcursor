@@ -1242,14 +1242,14 @@
     },
     {
       "name": "open_app",
-      "description": "Open an application by name. Uses platform-native launch.",
+      "description": "Open an application by name. Uses the cross-OS app alias table + the PlatformAdapter's launchApp (UWP-aware on Windows, `open -a` on macOS, gtk-launch / xdg-open on Linux).",
       "category": "orchestration",
       "parameters": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string",
-            "description": "Application name (e.g. \"notepad\", \"calc\", \"mspaint\")"
+            "description": "Application name (e.g. \"notepad\", \"calc\", \"mspaint\", \"Outlook\", \"Chrome\")"
           }
         },
         "required": [
