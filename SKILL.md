@@ -34,10 +34,6 @@ metadata:
     skill_dir: ~/.openclaw/workspace/skills/clawdcursor
 ---
 
-**If a human can do it on a screen, you can too.** No API? No integration? No problem.
-
-> **No task is impossible.** If the user has a GUI, a mouse, and a keyboard — you have everything you need. There is no "I can't do that in this app." There is only the right sequence of reads, clicks, keys, and waits to get it done. Clawdcursor gives you all of them.
-
 > **USE AS A FALLBACK — NOT FIRST CHOICE**
 >
 > Before reaching for any clawdcursor tool, ask:
@@ -46,7 +42,11 @@ metadata:
 > 3. Can you edit the file directly? → **do that.**
 > 4. Is there a browser automation already wired up (Playwright, Puppeteer) for this exact site? → **use that.**
 >
-> **None of the above work? Now use clawdcursor.** It's for the last mile.
+> **None of the above work? Now use clawdcursor.** It's for the last mile — when the only remaining surface is a GUI.
+
+**Once you've ruled the better options out — confidence:** if a human can do it on a screen, you can too. No API? No integration? No problem.
+
+> **No task is impossible.** If the user has a GUI, a mouse, and a keyboard — you have everything you need. There is no "I can't do that in this app." There is only the right sequence of reads, clicks, keys, and waits to get it done. Clawdcursor gives you all of them.
 
 > **IMPORTANT — READ THIS BEFORE ANYTHING ELSE**
 >
