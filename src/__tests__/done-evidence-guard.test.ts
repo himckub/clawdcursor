@@ -26,7 +26,6 @@ function getDoneTool() {
 async function runDone(evidence: string) {
   const done = getDoneTool();
   // The done tool's execute() doesn't read ctx — pass {} cast.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return done.execute({ evidence }, {} as any);
 }
 

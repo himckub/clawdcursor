@@ -15,7 +15,7 @@ import { describe, expect, it, beforeAll } from 'vitest';
 import request from 'supertest';
 import { createUtilityServer, initServerToken } from '../src/surface/http-utility';
 import { DEFAULT_CONFIG, SafetyTier } from '../src/types';
-import { VERSION } from '../src/version';
+import { VERSION } from '../src/surface/version';
 
 let token: string;
 beforeAll(() => {

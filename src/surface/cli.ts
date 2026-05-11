@@ -34,7 +34,7 @@ process.on('unhandledRejection', (reason: any) => {
     logger.error('unhandledRejection', { msg, stack });
   } catch {
     // Logger itself failed — fall back to stderr.
-    // eslint-disable-next-line no-console
+
     console.error('unhandledRejection (logger unavailable):', reason);
   }
   // In server mode, (process.env.CLAWD_SERVER_MODE === '1') keep running.
@@ -49,7 +49,7 @@ import { Agent } from '../core/agent';
 import { createUtilityServer, requireAuth, initServerToken, getServerLogBuffer } from './http-utility';
 import { DEFAULT_CONFIG } from '../types';
 import type { ClawdConfig } from '../types';
-import { VERSION } from '../version';
+import { VERSION } from './version';
 import dotenv from 'dotenv';
 import { resolveApiConfig } from '../llm/credentials';
 import { resolveConfig } from '../llm/config';
@@ -79,7 +79,7 @@ function authHeaders(): Record<string, string> {
 }
 
 // ── Emoji gate (shared utility) ──────────────────────────────────────────────
-import { e } from '../format';
+import { e } from './format';
 
 // ── Single-instance pidfile lock ─────────────────────────────────────────────
 // Prevents duplicate start/mcp/serve processes from accumulating (a common
@@ -556,7 +556,6 @@ program
 // ── Legacy start command body deleted in PR7.4 ──
 // The runAgentMode() function above is the canonical implementation.
 // `start` and `serve` are now thin deprecation aliases.
-
 
 program
   .command('doctor')

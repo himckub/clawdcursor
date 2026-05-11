@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as readline from 'readline';
-import { VERSION } from '../version';
+import { VERSION } from './version';
 
 const CONSENT_DIR = path.join(os.homedir(), '.clawdcursor');
 const CONSENT_FILE = path.join(CONSENT_DIR, 'consent');

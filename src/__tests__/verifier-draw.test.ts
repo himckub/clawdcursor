@@ -21,7 +21,6 @@ import type { PlatformAdapter } from '../platform/types';
 /** Minimal adapter stub — verifier only calls `screenshot`/`listWindows`/etc.
  *  through the explicit `verify()` call, never via captureState in these tests. */
 function adapterStub(): PlatformAdapter {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return {} as any;
 }
 

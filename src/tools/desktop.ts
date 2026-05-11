@@ -244,7 +244,7 @@ export function getDesktopTools(): ToolDefinition[] {
         // silently overwrote the clipboard. Save/restore makes type_text
         // transparent to the clipboard.
         let saved: string | null = null;
-        try { saved = await ctx.a11y.readClipboard(); } catch { saved = null; }
+        try { saved = await ctx.a11y.readClipboard(); } catch { /* clipboard unreadable — leave saved=null, restore becomes a no-op below */ }
 
         await ctx.a11y.writeClipboard(text);
         await new Promise(r => setTimeout(r, 50));

@@ -61,7 +61,7 @@ export function getAgentTools(): ToolDefinition[] {
         ctx.agent.executeTask(trimmed).catch((err: any) => {
           // Errors are surfaced via agent state + the daemon's log buffer.
           // Don't re-throw here — submit_task already returned.
-          // eslint-disable-next-line no-console
+
           console.error('submit_task: pipeline error', err?.message ?? err);
         });
         return { text: JSON.stringify({ accepted: true, task: trimmed }) };

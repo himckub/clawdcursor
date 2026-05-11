@@ -22,9 +22,9 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync, statSync } from 'fs
 import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { mountDashboard } from './dashboard';
-import { VERSION } from '../version';
+import { VERSION } from './version';
 import { DATA_DIR } from '../paths';
-import { e } from '../format';
+import { e } from './format';
 
 const TOKEN_PATH = join(DATA_DIR, 'token');
 
@@ -89,11 +89,11 @@ function timingSafeTokenEqual(received: string, expected: string): boolean {
   const a = Buffer.from(received, 'utf8');
   const b = Buffer.from(expected, 'utf8');
   if (a.length !== b.length) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+
     require('crypto').timingSafeEqual(a, a);
     return false;
   }
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+
   return require('crypto').timingSafeEqual(a, b);
 }
 

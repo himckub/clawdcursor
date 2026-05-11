@@ -6,7 +6,7 @@
  */
 
 import type { Express } from 'express';
-import { VERSION } from '../version';
+import { VERSION } from './version';
 
 export function mountDashboard(app: Express, getToken?: () => string): void {
   app.get('/', (_req, res) => {

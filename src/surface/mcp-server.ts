@@ -20,7 +20,7 @@
  */
 
 import type express from 'express';
-import { VERSION } from '../version';
+import { VERSION } from './version';
 import type { ToolContext, ToolDefinition } from '../tools/registry';
 import { getAllTools, getCompactSurface } from '../tools/registry';
 import { evaluateToolCall } from '../tools/safety-gate';

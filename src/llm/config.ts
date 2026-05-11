@@ -112,7 +112,7 @@ function readEnvPair(
   if (legacyVal) {
     if (!_openClawWarnedFor.has(legacy)) {
       _openClawWarnedFor.add(legacy);
-      // eslint-disable-next-line no-console
+
       console.warn(
         `[clawdcursor] Deprecation warning: env var ${legacy} is deprecated. ` +
         `Please rename it to ${canonical}. Support for ${legacy} will be removed in a future version.`
