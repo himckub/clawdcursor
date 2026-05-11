@@ -266,13 +266,26 @@ export class AccessibilityBridge {
     controlType?: string;
     processId?: number;
   }): Promise<UIElement[]> {
+    // v0.9.0 a11y scope fix: when the caller omits processId, default to the
+    // foreground window. The PSBridge / mac native script enforce a results
+    // cap during a descendant scan; without a window scope, the cap can be
+    // hit before the real target is reached if other windows have matching
+    // names earlier in the desktop tree. Foreground-window scope is almost
+    // always the right default for an agent that just said "click X".
+    let processId = opts.processId;
+    if (!processId) {
+      try {
+        const fg = await this.getActiveWindow();
+        if (fg?.processId) processId = fg.processId;
+      } catch { /* tolerate failure — fall through to original behaviour */ }
+    }
     if (IS_WIN) {
       const result = await this.winCmd({
         cmd: 'find-element',
         ...(opts.name        && { name:        opts.name }),
         ...(opts.automationId && { automationId: opts.automationId }),
         ...(opts.controlType  && { controlType:  opts.controlType }),
-        ...(opts.processId    && { processId:    opts.processId }),
+        ...(processId         && { processId }),
       }) as any;
       return Array.isArray(result) ? result : [];
     }
@@ -281,7 +294,7 @@ export class AccessibilityBridge {
       if (opts.name)         args.push('-Name', opts.name);
       if (opts.automationId) args.push('-AutomationId', opts.automationId);
       if (opts.controlType)  args.push('-ControlType', opts.controlType);
-      if (opts.processId)    args.push('-ProcessId', String(opts.processId));
+      if (processId)         args.push('-ProcessId', String(processId));
       return this.runMacScript('find-element.jxa', args);
     }
     return unsupportedLinuxResult([], 'findElement');
@@ -296,6 +309,16 @@ export class AccessibilityBridge {
     processId?: number;
   }): Promise<{ success: boolean; value?: string; error?: string; clickPoint?: { x: number; y: number } }> {
     let processId = opts.processId;
+
+    // v0.9.0 a11y scope fix: prefer foreground window when caller omits
+    // processId. findElement() now also defaults to foreground, so this
+    // path mostly handles the rare case where the foreground lookup fails.
+    if (!processId) {
+      try {
+        const fg = await this.getActiveWindow();
+        if (fg?.processId) processId = fg.processId;
+      } catch { /* fall through to find-element resolution */ }
+    }
 
     if (!processId) {
       const elements = await this.findElement({
