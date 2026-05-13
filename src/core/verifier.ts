@@ -406,20 +406,51 @@ export class GroundTruthVerifier implements Verifier {
 
     switch (taskType) {
       case 'send_email': {
-        // Must have: compose window closed, in inbox/sent view.
-        const composeKeywords = /(new message|compose|untitled|draft)/i;
-        const composeOpen = !!after.activeWindow?.title.match(composeKeywords);
-        checks.push({ name: 'compose_closed', pass: !composeOpen });
+        // Real user-reported false-positive (Kimi-driven, v0.9.0): a
+        // confirmation popup grabbed foreground after a click, so the
+        // active-window title became the popup's title (which doesn't
+        // match composeKeywords) and `compose_closed` falsely passed.
+        // The compose window was still there underneath, unsent.
+        //
+        // Fix: check the FULL WINDOW LIST. The compose window must be
+        // absent from ALL visible windows of the mail-app process —
+        // not just absent from the foreground. A popup can't hide the
+        // compose window from `windows`; only a real close can.
+        const composeKeywords = /(new message|compose|untitled|draft|reply)/i;
+        const composeStillOpen = (after.windows ?? []).some(w =>
+          !w.isMinimized && composeKeywords.test(w.title ?? '')
+        );
+        checks.push({ name: 'compose_closed', pass: !composeStillOpen });
 
-        const inboxKeywords = /(inbox|sent|mailbox|all mail|messages)/i;
-        const inInbox = inboxKeywords.test(after.activeWindow?.title ?? '') || inboxKeywords.test(after.ocrText);
-        checks.push({ name: 'in_inbox_or_sent', pass: inInbox });
+        // "Back in inbox/sent" check stays — but it accepts BOTH a
+        // modal-intercept case (active window is a popup like "Message
+        // sent" / "Saving to drafts") AND the post-send normal case
+        // (active window is the mailbox view). The popup form is
+        // verified by the second OCR check below if a recipient was
+        // mentioned; without that we can't tell a "sent" popup from a
+        // "draft saved" popup.
+        const inboxKeywords = /(inbox|sent|mailbox|all mail|messages|sent items|conversation history)/i;
+        const successKeywords = /(message sent|email sent|sent successfully|your message has been sent)/i;
+        const inMailContext =
+          inboxKeywords.test(after.activeWindow?.title ?? '') ||
+          inboxKeywords.test(after.ocrText) ||
+          successKeywords.test(after.ocrText);
+        checks.push({ name: 'in_inbox_or_sent', pass: inMailContext });
 
         // The recipient address must be visible somewhere if the task mentioned one.
         const emailMatch = opts.task.match(/[\w.-]+@[\w.-]+\.\w+/);
         if (emailMatch) {
           const recipientVisible = after.ocrText.toLowerCase().includes(emailMatch[0].toLowerCase());
           checks.push({ name: 'recipient_visible', pass: recipientVisible });
+        }
+
+        // Anti-signal: if a draft-save indicator is visible, the user
+        // didn't send — they closed/saved. Verifier should REJECT
+        // unless the success keyword is also present.
+        const draftSaved = /(draft saved|saved to drafts|outbox|queued to send)/i.test(after.ocrText);
+        const successNotice = /(message sent|email sent|sent successfully)/i.test(after.ocrText);
+        if (draftSaved && !successNotice) {
+          checks.push({ name: 'not_just_saved_as_draft', pass: false });
         }
         break;
       }
