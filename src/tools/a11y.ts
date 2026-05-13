@@ -335,13 +335,13 @@ export function getA11yTools(): ToolDefinition[] {
 
     {
       name: 'write_clipboard',
-      description: 'Write text to the OS clipboard.',
+      description: 'Write text to the OS clipboard. Tier 2 (mutation): overwrites the user\'s clipboard, which can hijack subsequent copy/paste flows. Reversibility is via a fresh user-initiated copy, not by the agent.',
       parameters: {
         text: { type: 'string', description: 'Text to write to clipboard', required: true },
       },
       category: 'clipboard',
       compactGroup: 'system',
-      safetyTier: 1,
+      safetyTier: 2,
       handler: async ({ text }, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {

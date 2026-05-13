@@ -182,28 +182,24 @@ export async function launchHandlerAndVerify(
 
   const before = await snapshotProcessWindows(exeBaseLower);
 
-  let launched = false;
   try {
     // detached + ignored stdio so we don't keep a pipe open to the GUI
-    // app. unref() lets the daemon exit cleanly later.
+    // app. unref() lets the daemon exit cleanly later. Any synchronous
+    // spawn error throws into the catch below; the 'error' event handler
+    // is registered so async failures don't crash the process either.
     const child = spawn(exePath, [uri], { detached: true, stdio: 'ignore', windowsHide: false });
     child.unref();
-    child.on('error', () => { /* handled via launched flag */ });
-    launched = true;
+    child.on('error', () => { /* poll-loop reports "no window appeared" */ });
   } catch (err) {
     return { success: false, windowOpened: false, error: err instanceof Error ? err.message : String(err) };
-  }
-  if (!launched) {
-    return { success: false, windowOpened: false, error: 'spawn failed silently' };
   }
 
   // Poll for a new visible top-level window. Compose windows take 500ms-2s
   // to mount in New Outlook depending on cold/warm state.
   const deadline = Date.now() + waitMs;
-  let after = before;
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 250));
-    after = await snapshotProcessWindows(exeBaseLower);
+    const after = await snapshotProcessWindows(exeBaseLower);
     const fresh = [...after].find(label => !before.has(label));
     if (fresh) {
       return { success: true, windowOpened: true, hwndLabel: fresh };

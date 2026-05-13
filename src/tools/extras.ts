@@ -469,13 +469,16 @@ export function getExtraTools(): ToolDefinition[] {
       name: 'open_file',
       description:
         'Open a file or folder in the OS default application. ' +
-        'Uses `open` (macOS), `xdg-open` (Linux), and explorer / ShellExecute (Windows).',
+        'Uses `open` (macOS), `xdg-open` (Linux), and explorer / ShellExecute (Windows). ' +
+        'Tier 2 (mutation): on some platforms "opening" a file may execute it ' +
+        '(.exe on Windows, .app on macOS, scripts with executable bit on Linux), ' +
+        'and the registered handler can be privileged or destructive.',
       parameters: {
         path: { type: 'string', description: 'Absolute filesystem path', required: true },
       },
       category: 'orchestration',
       compactGroup: 'window',
-      safetyTier: 1,
+      safetyTier: 2,
       handler: async ({ path: filePath }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('open_file');
@@ -504,13 +507,16 @@ export function getExtraTools(): ToolDefinition[] {
 
     {
       name: 'open_url',
-      description: 'Open a URL in the OS default browser. Non-browser-agnostic counterpart to navigate_browser.',
+      description:
+        'Open a URL in the OS default browser. Non-browser-agnostic counterpart to navigate_browser. ' +
+        'Tier 2 (mutation): triggers network egress to an arbitrary destination and may launch ' +
+        'the registered HTTP handler (which can be any app, not strictly a browser).',
       parameters: {
         url: { type: 'string', description: 'https:// or http:// URL', required: true },
       },
       category: 'orchestration',
       compactGroup: 'window',
-      safetyTier: 1,
+      safetyTier: 2,
       handler: async ({ url }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('open_url');
@@ -566,13 +572,13 @@ export function getExtraTools(): ToolDefinition[] {
       // slack: it's a workspace and channel. The agent picks the
       // scheme; we encode and dispatch.
       name: 'open_uri',
-      description: 'Open ANY registered URI (mailto:, tel:, sms:, webcal:, file:, slack:, vscode:, obsidian:, spotify:, zoommtg:, https:, custom-scheme:, ...) via the OS protocol-handler registry. The OS routes to whichever app the user has registered as the handler. Replaces dozens of app-specific shortcuts with one general primitive. For mailto:, use the convenience helper compose_uri_mailto, or pass a full pre-built URI.',
+      description: 'Open ANY registered URI (mailto:, tel:, sms:, webcal:, file:, slack:, vscode:, obsidian:, spotify:, zoommtg:, https:, custom-scheme:, ...) via the OS protocol-handler registry. The OS routes to whichever app the user has registered as the handler. Replaces dozens of app-specific shortcuts with one general primitive. For mailto:, use the convenience helper compose_uri_mailto, or pass a full pre-built URI. Tier 2 (mutation): the OS will dispatch to whatever app is registered for the scheme — that handler may be privileged or destructive (file: opens files which on Windows can execute .exe; vscode: opens a workspace; zoommtg: joins a call). The dispatcher does no scheme allowlist — callers + the agent loop are responsible for not constructing dangerous URIs.',
       parameters: {
         uri: { type: 'string', description: 'A full URI like "mailto:bob@example.com?subject=hi&body=hello", "tel:+15551234", "slack://channel?team=T123&id=C456", "vscode://file/Users/me/code/x.ts", "https://example.com". Must be properly URL-encoded.', required: true },
       },
       category: 'orchestration',
       compactGroup: 'window',
-      safetyTier: 1,
+      safetyTier: 2,
       handler: async ({ uri }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('open_uri');

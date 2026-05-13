@@ -220,13 +220,13 @@ export function getOrchestrationTools(): ToolDefinition[] {
 
     {
       name: 'navigate_browser',
-      description: `Open a URL in the browser. Launches with CDP enabled (port ${DEFAULT_CDP_PORT}) for DOM interaction. Call cdp_connect after.`,
+      description: `Open a URL in the browser. Launches with CDP enabled (port ${DEFAULT_CDP_PORT}) for DOM interaction. Call cdp_connect after. Tier 2 (mutation): triggers network egress to an arbitrary destination + spawns/attaches to a browser process.`,
       parameters: {
         url: { type: 'string', description: 'URL to navigate to', required: true },
       },
       category: 'orchestration',
       compactGroup: 'window',
-      safetyTier: 1,
+      safetyTier: 2,
       handler: async ({ url }, ctx) => {
         await ctx.ensureInitialized();
         if (await ctx.cdp.isConnected()) {
