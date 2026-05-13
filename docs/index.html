@@ -21,8 +21,8 @@
     Install (Windows):  powershell -c "irm https://clawdcursor.com/install.ps1 | iex"
     Install (macOS/Linux): curl -fsSL https://clawdcursor.com/install.sh | bash
 
-    Connect via MCP (recommended): clawdcursor mcp --compact → 6 compound tools.
-    Connect via REST: clawdcursor serve → 75 granular tools on localhost:3847.
+    Connect via MCP stdio (editor host): clawdcursor mcp --compact → 6 compound tools.
+    Connect via MCP HTTP (daemon): clawdcursor agent → /mcp on localhost:3847.
 
     Cross-platform: Windows, macOS, Linux (X11 + Wayland).
     Model-agnostic: any LLM with tool calling.
@@ -340,7 +340,7 @@
         <p>Plain English in, actions out.</p>
         <div class="tag-row">
           <span class="tag g">clawdcursor doctor</span>
-          <span class="tag g">clawdcursor start</span>
+          <span class="tag g">clawdcursor agent</span>
         </div>
       </div>
       <div class="who-card agent">
@@ -376,10 +376,10 @@
         </div>
       </div>
       <div class="mode-card c">
-        <h3>CLI <span style="font-size:0.7rem;font-weight:500;color:var(--text3);letter-spacing:0.04em;">— testing only</span></h3>
+        <h3>CLI <span style="font-size:0.7rem;font-weight:500;color:var(--text3);letter-spacing:0.04em;">— interactive use</span></h3>
         <ol>
           <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor doctor</code></li>
-          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor start</code></li>
+          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor agent</code></li>
           <li>Type tasks in plain English</li>
         </ol>
         <div class="mode-stats">
@@ -388,11 +388,11 @@
         </div>
       </div>
       <div class="mode-card a">
-        <h3>REST API</h3>
+        <h3>MCP HTTP</h3>
         <ol>
-          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor serve</code></li>
-          <li>75 tools on localhost:3847<br><span style="font-size:0.82em;color:var(--text2)">or 6 via <code>?mode=compact</code></span></li>
-          <li>OpenAI function-calling format</li>
+          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor agent</code></li>
+          <li>87 tools on localhost:3847/mcp<br><span style="font-size:0.82em;color:var(--text2)">JSON-RPC tools/list + tools/call; 6 compact compounds filterable</span></li>
+          <li>Stateless — no session init needed</li>
         </ol>
         <div class="mode-stats">
           <div><div class="mode-stat-val">:3847</div><div class="mode-stat-lbl">Localhost</div></div>
@@ -511,7 +511,7 @@
 <span class="c-cmd">clawdcursor doctor</span>  <span class="c-comment"># verify install — then add the MCP block to your agent host config</span></code></pre>
     </div>
 
-    <p style="color:var(--text3);font-size:0.78rem;margin-top:10px;">Node.js 20+. Localhost only. <code style="font-size:0.95em">clawdcursor start</code> is for manual testing — agents should use MCP.</p>
+    <p style="color:var(--text3);font-size:0.78rem;margin-top:10px;">Node.js 20+. Localhost only. <code style="font-size:0.95em">clawdcursor agent</code> is for manual testing — agents should use MCP.</p>
   </section>
 
 </div>

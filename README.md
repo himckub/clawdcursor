@@ -151,7 +151,7 @@ Any MCP-aware editor. Add a stdio MCP entry pointing to `clawdcursor mcp --compa
 
 ### Claude Agent SDK / bring-your-own-model
 
-The skill also exposes a local REST surface for agents that do not speak MCP. Start the skill server once, then discover tools at `GET http://127.0.0.1:3847/tools?mode=compact` and call them at `POST /execute/:name`. Bearer-token auth; token written to `~/.clawdcursor/token`. See [API](#api) below.
+The skill also exposes MCP over HTTP for agents that need a daemon transport rather than stdio. Run `clawdcursor agent`, then POST JSON-RPC envelopes to `http://127.0.0.1:3847/mcp` — `tools/list` returns the catalog, `tools/call` invokes a tool. Bearer-token auth; token written to `~/.clawdcursor/token`. Stateless — no session-init handshake required. See [API](#api) below.
 
 ---
 
@@ -163,7 +163,7 @@ The skill exposes two catalogs side by side. Agents pick the one that fits.
 
 Anthropic `computer_20250124`-style: one tool per capability, with an `action` enum for the verb. Small prompt footprint (~1,500 tokens), easy for a model to learn zero-shot, the default for most agents.
 
-Most-used actions per compound below. The full enum is at `GET /tools?mode=compact` or via MCP `list_tools`.
+Most-used actions per compound below. The full enum is in the MCP `tools/list` response (filter by `compactGroup`) — works the same on stdio and HTTP transports.
 
 | Tool | Most-used actions |
 |---|---|
@@ -174,9 +174,9 @@ Most-used actions per compound below. The full enum is at `GET /tools?mode=compa
 | `browser` | `connect`, `page_context`, `read_text`, `click`, `type`, `select_option`, `evaluate`, `wait_for`, `list_tabs`, `switch_tab`, `scroll` |
 | `task` | (no `action` enum &mdash; takes `{instruction: string}` and routes through the full pipeline) |
 
-### Granular &mdash; 75 individual tools
+### Granular &mdash; 87 individual tools
 
-Full catalog for agents that prefer one tool per verb. Sample of categories below; the full list is at `GET /tools` or `list_tools` over MCP.
+Full catalog for agents that prefer one tool per verb. Sample of categories below; the full list is in the MCP `tools/list` response.
 
 | Category | Examples |
 |---|---|
@@ -189,7 +189,7 @@ Full catalog for agents that prefer one tool per verb. Sample of categories belo
 | System | `read_clipboard`, `write_clipboard`, `get_system_time`, `undo_last`, `delegate_to_agent` |
 | Orchestration | `smart_click`, `navigate_browser`, `wait` |
 
-Full catalog visible to the agent through MCP `list_tools` or at `GET /tools`.
+Full catalog visible to the agent through MCP `tools/list` (stdio or HTTP).
 
 ---
 
@@ -242,23 +242,23 @@ Hardening: server binds to `127.0.0.1` only, bearer-token auth on every request,
 
 ## API
 
-For agents that do not speak MCP. Base URL: `http://127.0.0.1:3847` (localhost-only, bearer-token auth, token at `~/.clawdcursor/token`).
+v0.9 collapsed everything onto **MCP — one protocol, two transports.** REST is gone. Base URL for HTTP MCP: `http://127.0.0.1:3847` (localhost-only, bearer-token auth, token at `~/.clawdcursor/token`).
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/tools` | GET | Full catalog in OpenAI function-calling format. `?mode=compact` for the 6-tool surface. |
-| `/execute/:name` | POST | Execute a tool by name. Returns structured JSON. |
-| `/status` | GET | Current skill state. |
-| `/screenshot` | GET | Current screen as PNG. |
-| `/confirm` | POST | Approve or reject a safety-gated action. |
-| `/abort` | POST | Stop the in-flight task. |
-| `/health` | GET | Version, uptime, and health check. |
+| `/mcp` | POST | JSON-RPC: `tools/list` for the catalog, `tools/call` for everything (every former REST endpoint is now an MCP tool). |
+| `/mcp` | GET | SSE channel for server-initiated notifications. |
+| `/health` | GET | Readiness probe — no auth. Returns `{"status":"ok","version":"x.y.z"}`. |
+| `/stop` | POST | Graceful shutdown — auth, localhost-only. |
+| `/` | GET | Minimal dashboard, calls `/mcp` via JSON-RPC under the hood. |
+
+Former REST routes (`/tools`, `/execute/:name`, `/task`, `/status`, `/screenshot`, `/confirm`, `/abort`, `/learn`, `/favorites`) are all available as MCP tools (`submit_task`, `abort_task`, `agent_status`, `screenshot_full`, `favorites_*`, `learn_app`, etc.). The migration is mechanical — `POST /execute/X` becomes `POST /mcp` with `{"method":"tools/call","params":{"name":"X","arguments":{...}}}`.
 
 ---
 
 ## Platform Support
 
-Platform-specific code lives in `src/v2/platform/{windows,macos,linux}.ts` behind a single `PlatformAdapter` interface. Business logic never reads `process.platform`.
+Platform-specific code lives in `src/platform/{windows,macos,linux}.ts` (plus `wayland-backend.ts`) behind a single `PlatformAdapter` interface. Business logic never reads `process.platform`. Total adapter code: ~3,750 LOC across the four platforms.
 
 | Platform | UI Automation | OCR | Browser |
 |---|---|---|---|
@@ -280,33 +280,37 @@ Platform-specific code lives in `src/v2/platform/{windows,macos,linux}.ts` behin
 
 ## Testing and Troubleshooting
 
-The CLI below is intended for humans diagnosing an install. Agents should not invoke it; they should use MCP or the REST surface.
+The CLI below is intended for humans diagnosing an install. Agents should not invoke it; they should connect via MCP (stdio for editor hosts, HTTP `/mcp` for daemons).
 
 ```
 clawdcursor doctor       Diagnose install, permissions, and platform bridges
 clawdcursor grant        Grant macOS permissions (interactive)
 clawdcursor consent      Manage desktop-control consent (--accept / --revoke / --status)
 clawdcursor status       Check readiness (consent, permissions, AI config)
-clawdcursor mcp          MCP stdio server (the primary skill transport)
-clawdcursor serve        REST-only tool server (bring-your-own-agent)
-clawdcursor stop         Stop every running mode (mcp, serve, start)
+clawdcursor mcp          MCP stdio server (the primary skill transport for editor hosts)
+clawdcursor agent        Daemon: HTTP MCP at /mcp on :3847 + autonomous submit_task tool
+clawdcursor agent --no-llm  Daemon, tool surface only (no built-in brain)
+clawdcursor stop         Stop every running mode (mcp, agent)
 
 # The web dashboard is reachable at http://127.0.0.1:3847 while
-# `clawdcursor serve` (or `start`) is running — no separate command.
+# `clawdcursor agent` is running — no separate command.
 
-# The two commands below exist for manual end-to-end testing only.
-# Real agents should not use these — they should call the skill through MCP.
-clawdcursor start        Run the built-in autonomous agent (testing)
-clawdcursor task <t>     Send a task to that agent (testing)
+# The command below exists for manual end-to-end testing only.
+# Real agents should not use it — they should call submit_task via MCP.
+clawdcursor task <t>     Send a task to the running agent (testing)
+
+# Legacy aliases — work but print a deprecation warning. Removed in v0.10.
+clawdcursor start        → alias for `clawdcursor agent`
+clawdcursor serve        → alias for `clawdcursor agent --no-llm`
 
 Options:
-  --port <port>          Default: 3847 (start, serve, stop, task)
-  --compact              MCP only: expose 6 compound tools instead of 75 granular.
-                         For REST/serve, use the `?mode=compact` query parameter
-                         on `GET /tools` instead.
-  --provider <name>      `start` only: anthropic | openai | gemini | ollama | ...
-  --accept               `start` and `consent` only: skip the consent prompt.
-                         For `serve`, use `--skip-consent` (dev environments).
+  --port <port>          Default: 3847 (agent, stop, task)
+  --compact              MCP only: expose 6 compound tools instead of 87 granular.
+                         Over HTTP MCP, request the compact set by filtering the
+                         tools/list response to the 6 compound names.
+  --provider <name>      `agent` only: anthropic | openai | gemini | ollama | ...
+  --accept               `agent` and `consent` only: skip the consent prompt.
+                         For `agent --no-llm`, use `--skip-consent` (dev environments).
 ```
 
 ---

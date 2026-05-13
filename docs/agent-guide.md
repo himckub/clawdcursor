@@ -24,12 +24,12 @@ required.
 You see 6 compound tools: `computer`, `accessibility`, `window`, `system`,
 `browser`, `task`.
 
-**REST (for any HTTP-capable agent):**
+**MCP HTTP (for any HTTP-capable agent):**
 ```bash
-clawdcursor serve
-curl "http://127.0.0.1:3847/tools?mode=compact"
+clawdcursor agent           # full daemon (with autonomous submit_task)
+clawdcursor agent --no-llm  # tool surface only, no built-in brain
 ```
-Auth token at `~/.clawdcursor/token`.
+JSON-RPC at `POST http://127.0.0.1:3847/mcp` — `tools/list` returns the catalog, `tools/call` invokes a tool. Auth via `Authorization: Bearer <token>` from `~/.clawdcursor/token`. Stateless — no session init handshake required.
 
 ## The simplest path
 
