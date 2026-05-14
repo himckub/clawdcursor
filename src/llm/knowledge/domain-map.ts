@@ -45,20 +45,34 @@ export const DOMAIN_MAP: Record<string, string> = {
 };
 
 /**
- * Title-based fallback when the URL isn't a domain match.
- * Keep terse — every rule here is a heuristic that can mis-fire.
+ * Title-based / process-name fallback when the URL isn't a domain match.
+ * The preprocessor passes activeWindowTitle OR activeWindowProcessName here,
+ * so these patterns deliberately match BOTH human-readable titles ("Microsoft
+ * Edge", "Notepad", "Microsoft Outlook") AND process names ("msedge",
+ * "notepad", "olk", "WINWORD", "EXCEL"). Keep terse — every rule here is a
+ * heuristic that can mis-fire. Each row maps to a bundled guide filename
+ * under src/llm/knowledge/guides/.
  */
 export const TITLE_FALLBACKS: Array<{ pattern: RegExp; app: string }> = [
-  { pattern: /\bgmail\b/i,   app: 'gmail' },
-  { pattern: /\boutlook\b/i, app: 'outlook' },
-  { pattern: /\bslack\b/i,   app: 'slack' },
-  { pattern: /\bfigma\b/i,   app: 'figma' },
-  { pattern: /\basana\b/i,   app: 'asana' },
-  { pattern: /\bnotion\b/i,  app: 'notion' },
-  { pattern: /\bteams\b/i,   app: 'teams' },
-  { pattern: /\bdiscord\b/i, app: 'discord' },
-  { pattern: /\bvs ?code\b/i, app: 'vscode' },
-  { pattern: /\blinear\b/i,  app: 'linear' },
+  // Web apps / cross-mode apps
+  { pattern: /\bgmail\b/i,                      app: 'gmail' },
+  { pattern: /\boutlook\b/i,                    app: 'outlook' },     // classic Outlook
+  { pattern: /\bolk\b/i,                        app: 'olk' },         // new UWP Outlook (separate guide)
+  { pattern: /\bslack\b/i,                      app: 'slack' },
+  { pattern: /\bfigma\b/i,                      app: 'figma' },
+  { pattern: /\basana\b/i,                      app: 'asana' },
+  { pattern: /\bnotion\b/i,                     app: 'notion' },
+  { pattern: /\bteams\b/i,                      app: 'teams' },
+  { pattern: /\bdiscord\b/i,                    app: 'discord' },
+  { pattern: /\bvs ?code\b/i,                   app: 'vscode' },
+  { pattern: /\blinear\b/i,                     app: 'linear' },
+
+  // Native desktop apps — matched against process name OR title
+  { pattern: /\b(?:notepad|note ?pad)\b/i,      app: 'notepad' },
+  { pattern: /\b(?:mspaint|paint)\b/i,          app: 'mspaint' },
+  { pattern: /\b(?:msedge|microsoft edge|edge browser)\b/i, app: 'msedge' },
+  { pattern: /\bspotify\b/i,                    app: 'spotify' },
+  { pattern: /\b(?:excel|winword|word|powerpoint)\b/i, app: 'excel' }, // Office: only Excel guide present today; falls through for Word/PPT
 ];
 
 /**
