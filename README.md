@@ -45,6 +45,14 @@ It's **model-agnostic** (Claude, GPT, Gemini, Llama, Kimi, Ollama, &hellip;), **
 
 Sixty seconds from zero to a tool-calling agent on your desktop.
 
+**Pick your mode first:**
+
+| Your situation | Use | Why |
+|---|---|---|
+| AI lives in your editor (Claude Code, Cursor, Windsurf, Zed) | **`clawdcursor mcp`** | stdio MCP server. Editor spawns it on demand. No daemon, no port. |
+| You're building an agent that runs unattended | **`clawdcursor agent`** | HTTP MCP daemon on `127.0.0.1:3847`. Has its own LLM brain optionally configured via `doctor`. |
+| Your agent has its own brain — you just want the tools as an HTTP endpoint | **`clawdcursor agent --no-llm`** | Same daemon, no built-in pipeline. Pure tool surface. |
+
 **Windows (PowerShell):**
 
 ```powershell
@@ -60,9 +68,9 @@ curl -fsSL https://clawdcursor.com/install.sh | bash
 Then:
 
 ```bash
-clawdcursor consent --accept   # one-time desktop-control consent
-clawdcursor doctor             # verify permissions + platform bridges
-clawdcursor agent              # start the daemon (stdio MCP also works without it)
+clawdcursor consent --accept   # one-time desktop-control consent (required)
+clawdcursor doctor             # verify permissions + (optionally) configure an LLM provider
+clawdcursor agent              # OR `clawdcursor mcp` — see the table above
 ```
 
 The installer clones into `~/clawdcursor`, runs `npm install`, builds, and `npm link`s a global shim. Runtime state lives at `~/.clawdcursor/` (auth token, pidfiles, logs). It does **not** edit any agent host config &mdash; that step is below.
@@ -178,7 +186,7 @@ Anthropic `computer_20250124`-style: one tool per capability, an `action` enum f
 | `browser` | `connect`, `page_context`, `read_text`, `click`, `type`, `select_option`, `evaluate`, `wait_for`, `list_tabs`, `switch_tab`, `scroll` |
 | `task` | `{instruction: string}` &mdash; hand off the whole task to the pipeline. No `action` enum. |
 
-### Granular &mdash; 87 individual tools
+### Granular &mdash; 89 individual tools
 
 One schema per verb. Use this when your runtime requires every primitive as a top-level tool. The full catalog is visible through MCP `tools/list` on either transport.
 
@@ -192,6 +200,34 @@ window({ action: "open_app", name: "Outlook" })
 system({ action: "ocr" })                            // OS-level OCR, no LLM vision
 task({ instruction: "open Notepad and type hello" }) // full pipeline
 ```
+
+---
+
+## Guides Marketplace
+
+For unfamiliar apps, the agent reasons from screenshots and the a11y tree &mdash; slow but always works. For popular apps, **community-curated guides** ship the keyboard shortcuts, workflow patterns, layout cues, and failure modes the agent would otherwise have to discover by failing first. Loading a guide for an app it knows speeds operation 5&ndash;10&times;.
+
+- **Public registry: <https://clawdcursor.com/app-guides>**
+- **Source repo: <https://github.com/AmrDab/clawdcursor-guides>** &mdash; community PRs welcome
+- **Verified seed guides:** discord, excel, figma, gmail, mspaint, olk (new Outlook), outlook, slack, spotify, youtube
+- **Bundled core (offline fallback):** msedge, notepad
+
+Guides are fetched on demand, cached locally for 7 days, LRU-evicted at 50 entries. The cache lives at `~/.clawdcursor/guide-cache/`. The agent never blocks on the network &mdash; if a guide isn't local and the registry is unreachable, it falls back to first-principles reasoning.
+
+```bash
+clawdcursor guides available             # browse the public registry
+clawdcursor guides install youtube       # pre-warm cache for one app
+clawdcursor guides list                  # show cached + ratings
+clawdcursor guides info youtube          # details for one cached guide
+clawdcursor guides refresh youtube       # force re-fetch
+clawdcursor guides submit my-app.json    # lint + print PR instructions
+```
+
+Every guide passes through a client-side linter on every load &mdash; schema check + prompt-injection patterns + dangerous-prose detection. A guide that fails lint is dropped and the agent falls back to no-knowledge, never poisoned-knowledge. Same linter runs as the registry's CI check on every PR.
+
+Voting: each guide has a `vote: <app>` issue on the source repo. React 👍 / 👎. A nightly job aggregates reactions into `index.json` so `clawdcursor guides list` shows ratings.
+
+See [`docs/guide-marketplace.md`](docs/guide-marketplace.md) for the full architecture, trust model, and CI flow.
 
 ---
 
@@ -237,7 +273,7 @@ Five directories. Everything else is a leaf module.
 | Directory | What lives here |
 |---|---|
 | `src/core/` | Pipeline orchestrator, agent loop, router, preprocessor, sense (a11y/snapshot/fingerprint), classify, decompose, skills cache, safety gate, ground-truth verifier, Reflector. |
-| `src/tools/` | The 87 granular tools + 6 compound aggregators, playbooks (`compose-send`, `find-replace`), tool registry, dispatch. |
+| `src/tools/` | The 89 granular tools + 6 compound aggregators, playbooks (`compose-send`, `find-replace`), tool registry, dispatch. |
 | `src/platform/` | `PlatformAdapter` interface + Windows / macOS / Linux / Wayland implementations, OCR engine, CDP driver, URI handler. |
 | `src/llm/` | Provider clients (Claude, GPT, Gemini, Llama, Kimi, Ollama, &hellip;), credentials, model config, guide loader. |
 | `src/surface/` | CLI (`clawdcursor`), MCP server (stdio + HTTP), dashboard, doctor, onboarding, readiness probes. |
@@ -270,24 +306,39 @@ See [SECURITY.md](SECURITY.md) for the private vulnerability reporting channel.
 
 ## CLI
 
-The CLI is for humans diagnosing an install. Agents should connect via MCP (stdio for editor hosts, HTTP for daemons).
+The CLI is for humans diagnosing an install or managing the guide cache. Agents should connect via MCP (stdio for editor hosts, HTTP for daemons).
 
 ```
-clawdcursor doctor          Diagnose install, permissions, and platform bridges
-clawdcursor grant           Grant macOS permissions (interactive)
+# Install + setup
 clawdcursor consent         Manage desktop-control consent (--accept / --revoke / --status)
+clawdcursor grant           Grant macOS permissions (interactive, macOS only)
+clawdcursor doctor          Verify permissions, configure AI provider + models
 clawdcursor status          Readiness check (consent, permissions, AI config)
-clawdcursor mcp             MCP stdio server — the primary transport for editor hosts
-clawdcursor agent           Daemon: HTTP MCP at /mcp on :3847, plus built-in autonomous loop
+
+# Run
+clawdcursor mcp             MCP stdio server — primary transport for editor hosts
+clawdcursor agent           Daemon: HTTP MCP at /mcp on :3847, optional built-in LLM
 clawdcursor agent --no-llm  Daemon, tool surface only (no built-in brain)
 clawdcursor stop            Stop every running mode
+clawdcursor uninstall       Remove all clawdcursor config and data
+
+# Guides marketplace (see Guides Marketplace section above)
+clawdcursor guides list                What's cached + ratings
+clawdcursor guides info <app>          Cache metadata for one app
+clawdcursor guides available           Browse the public registry
+clawdcursor guides install <app>       Pre-warm one (or --all for offline prep)
+clawdcursor guides refresh <app>       Force re-fetch
+clawdcursor guides remove <app>        Evict from cache
+clawdcursor guides clean               Wipe cache
+clawdcursor guides lint <file>         Validate a local guide
+clawdcursor guides submit <file>       Lint + print PR instructions
 
 # Manual end-to-end testing only — agents should call submit_task via MCP.
 clawdcursor task <t>        Send a task to the running agent
 
 Options:
   --port <port>          Default: 3847
-  --compact              MCP only: expose 6 compound tools instead of 87 granular
+  --compact              MCP only: expose 6 compound tools instead of 89 granular
   --provider <name>      `agent` only: anthropic | openai | gemini | ollama | ...
   --accept               `agent` and `consent` only: skip the consent prompt
 ```

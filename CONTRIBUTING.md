@@ -25,7 +25,7 @@ Useful scripts:
 | `npm run typecheck` | `tsc --noEmit` — must be clean |
 | `npm run lint` | ESLint over `src/` |
 | `npm run test` | `vitest` watch mode |
-| `npm run test:ci` | `vitest run` — 430/431 baseline, one intentional skip |
+| `npm run test:ci` | `vitest run` — 759/760 baseline, one intentional skip |
 | `npm run test:mcp-schema-snapshot` | Diffs the granular tool catalog against `schema.snapshot.json`. Fails if the schema changed. Commit the new snapshot (`:update`) when the change is intentional. |
 
 CI runs typecheck + lint + tests + schema snapshot on every PR across Windows, macOS, and Linux on Node 20 and 22. Match that locally before pushing where possible.
@@ -33,10 +33,14 @@ CI runs typecheck + lint + tests + schema snapshot on every PR across Windows, m
 ## Code style
 
 - TypeScript strict mode is on. No `any` unless you have a real reason and a comment explaining it.
-- Business logic does not see `process.platform`. Cross-OS branches live in `src/v2/platform/{macos,windows,linux}.ts` behind the `PlatformAdapter` interface. If you find yourself writing `if (IS_MAC)` outside `src/v2/platform/`, move it.
-- Every tool call goes through the SafetyLayer (`src/pipeline/safety/layer.ts`). Do not add a tool that bypasses it. Destructive verbs (send, delete, close_window, blocked keyboard combos) must escalate to confirm.
+- Business logic does not see `process.platform`. Cross-OS branches live in `src/platform/{windows,macos,linux,wayland-backend}.ts` behind the `PlatformAdapter` interface. If you find yourself writing `if (IS_MAC)` outside `src/platform/`, move it.
+- Every tool call goes through the SafetyLayer (`src/core/safety/layer.ts`). Do not add a tool that bypasses it. Destructive verbs (send, delete, close_window, blocked keyboard combos) must escalate to confirm.
 - New compact tool actions: define them in `src/tools/compact.ts`, then run `npm run test:mcp-schema-snapshot:update` and commit the snapshot diff. The `argRemap` field is how you alias agent-friendly arg names onto granular tools — see the `key`/`combo` example.
-- Tests live next to the code they test under `tests/`. Vitest. Prefer integration tests that hit the real adapter over mocks.
+- Tests live alongside the modules they cover under `src/__tests__/` (Vitest). Prefer integration tests that hit the real adapter over mocks.
+
+## Contributing a guide (separate repo)
+
+App guides for the marketplace live in [`AmrDab/clawdcursor-guides`](https://github.com/AmrDab/clawdcursor-guides), not here. See that repo's CONTRIBUTING.md for the schema and PR flow. The standalone linter (`scripts/lint-guide.mjs` there) mirrors the client linter in `src/llm/knowledge/guide-linter.ts` — keep them in sync.
 
 ## Commit messages
 

@@ -2,14 +2,14 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
-## [0.9.0] - 2026-05-13 — Architecture redesign: MCP-only, 5 directories, Reflector feedback, professional polish
+## [0.9.0] - 2026-05-14 — Architecture redesign + guides marketplace
 
-The largest release since v0.7. Net change vs v0.8.17: **−10,200 LOC, +12 new MCP tools, one protocol instead of two, five directories instead of seven**, plus a Reflector feedback channel that closes the loop between verifier signals and planner decisions.
+The largest release since v0.7. Net change vs v0.8.17: **−10,200 LOC, +14 new MCP tools, one protocol instead of two, five directories instead of seven**, plus a Reflector feedback channel that closes the loop between verifier signals and planner decisions, plus a public guides marketplace where community-contributed app knowledge ships independently of the binary.
 
 ### Architectural rewrite
 
 - **One protocol, two transports.** REST surface (`/task`, `/tools`, `/execute/:name`, `/favorites`, `/learn`, `/screenshot`, `/abort`, `/confirm`, `/logs`, `/task-logs`) is gone. Every former REST endpoint is now an MCP tool. The HTTP daemon serves stateless MCP at `POST /mcp` alongside `/health`, `/stop`, and `/` (dashboard).
-- **Five directories under `src/`.** `core/` (agent loop + pipeline + verifier + safety + skills), `tools/` (one registry, 87 granular + 6 compound), `platform/` (Windows / macOS / Linux X11 / Linux Wayland adapters + Swift host app), `llm/` (providers + credentials + knowledge), `surface/` (CLI + MCP server + dashboard). One concern per directory, no upward dependencies.
+- **Five directories under `src/`.** `core/` (agent loop + pipeline + verifier + safety + skills), `tools/` (one registry, 89 granular + 6 compound), `platform/` (Windows / macOS / Linux X11 / Linux Wayland adapters + Swift host app), `llm/` (providers + credentials + knowledge), `surface/` (CLI + MCP server + dashboard). One concern per directory, no upward dependencies.
 - **Legacy cascade removed.** The v0.7-era cascade (`computer-use.ts`, `ai-brain.ts`, `action-router.ts`, `generic-computer-use.ts`, 14 more modules — ~12 k LOC) deleted along with the `--legacy` flag and `_executeTaskInternal`. Tag `v0.8.17-legacy` preserves the cascade for emergency cherry-pick.
 - **CLI verb rename.** `clawdcursor start` → `clawdcursor agent`; `clawdcursor serve` → `clawdcursor agent --no-llm`. Old verbs still work as deprecation aliases through 0.9.x; removed in 0.10.
 
@@ -35,11 +35,40 @@ The verifier now produces structured `ReflectionFeedback` with typed `Cause[]` a
 
 ### Tools
 
-- **Tool count 75 → 87.** Twelve new MCP tools absorbed the former REST endpoints: `submit_task`, `abort_task`, `agent_status`, `screenshot_full`, `favorites_list/_add/_remove`, `task_logs_list/_current`, `logs_recent`, `learn_app`, `submit_report`.
+- **Tool count 75 → 89.** Fourteen new MCP tools absorbed the former REST endpoints + the marketplace surface: `submit_task`, `abort_task`, `agent_status`, `screenshot_full`, `favorites_list/_add/_remove`, `task_logs_list/_current`, `logs_recent`, `learn_app`, `submit_report`, plus two new guides-management entries.
 - **Tool registry unified.** Compact (6 compounds) is now a transform over the granular registry, not a parallel catalog. One source of truth, no drift.
 - **MCP `open_app` uses alias table + PlatformAdapter** instead of raw `Start-Process`. Calculator, Win11 Notepad, and other UWP apps work correctly.
 - **`focus_window` AND-matches** when given both pid + title — needed for Win11's tabbed Notepad where multiple windows share a pid.
 - **`type_text` preserves the user's clipboard** around its paste-as-type operation. Was silently clobbering.
+
+### Guides marketplace (new)
+
+clawdcursor reasons about every app from screenshots and a11y trees. For popular apps that's slow. v0.9 ships a **marketplace of community-curated app guides** the agent fetches on demand, caches locally based on usage, and uses to operate apps 5–10× faster — without ever blocking the agent loop on the network.
+
+- **Public registry at <https://clawdcursor.com/app-guides>**, backed by the GitHub repo <https://github.com/AmrDab/clawdcursor-guides>. PR-based submissions, native GitHub identity as anti-spam, vote-issues for ratings (`vote: <app>` issues with 👍/👎 reactions aggregated nightly into `index.json`).
+- **10 verified seed guides at launch**: gmail, outlook, slack, youtube (the rich-multi-task reference — 19 workflows, 36 shortcuts, 8 layout regions, 13 tips), figma, discord, excel, mspaint, olk (new Outlook), spotify. Maintainer trust labels: `trust:verified` / `trust:community` / `trust:experimental`.
+- **Three new client-side modules**:
+  - `src/llm/knowledge/remote-loader.ts` — `fetchGuide(app)` with timeout, conditional GET via ETag, stale-while-revalidate.
+  - `src/llm/knowledge/cache.ts` — LRU + TTL (7 days, 50 entries). `touchUsage` reorders LRU on every hit, so popular guides survive eviction even when not most-recently-fetched.
+  - `src/llm/knowledge/guide-linter.ts` — defense-in-depth: schema validation + prompt-injection patterns + dangerous-prose detection runs on every guide before injection, regardless of source (bundled, cached, user-override). Failed guides drop to null — agent falls back to first-principles reasoning, never poisoned-knowledge.
+- **Bundled core trimmed to 2 guides** (msedge + notepad — Windows defaults that ship with every install). The other 10 curated guides moved to `seed-registry/guides/` and uploaded to the GitHub repo. Lighter binary; guides update independently of releases.
+- **`clawdcursor guides` CLI rewritten**: `list`, `info <app>`, `available`, `install <app>` / `install --all`, `refresh <app>`, `remove <app>`, `clean`, `lint <file>`, `submit <file>` (lints + prints PR instructions).
+- **Preprocessor fires `prefetchGuideForApp(app)` async** the moment it detects an active window — by the next task, the cache is warm. First-touch uses whatever's local; subsequent tasks are fast.
+- **`learn_app` writes rerouted** to the user-override dir at `~/.clawdcursor/ui-knowledge/{app}.json` (was writing into the bundled source tree where the next install would clobber it). Auto-saves successful task patterns under `learnedWorkflows`; FIFO-capped at 20 per app.
+- **Rich prompt fragment renderer** (`renderAppKnowledge`): the agent now sees SHORTCUTS / WORKFLOWS (★-marked active one first) / LAYOUT / TIPS instead of just 8 comma-joined shortcuts. Cap 6000 chars with graceful degradation; non-active workflows truncated to 180 chars so a 20-workflow guide doesn't crowd out layout.
+
+### Router
+
+- **Web-service redirect layer** (`src/core/router/web-services.ts`, 60-entry table). "open youtube" / "open reddit" / "open gmail" now redirects to `handleUrlNav('https://www.youtube.com')` via the OS default browser, instead of fall-through to Start-Menu search → blind-agent escalation. Closes a v0.9 failure mode where the agent typed the literal phrase "default browser" into a search bar. Native-client preference preserved: "open chrome" still launches the desktop client.
+- **System-context preamble** in the blind/hybrid agent system prompt (`src/core/agent-loop/prompt.ts` section 5c): web services → `open_url(URL)`, never type "browser" into search bars, don't emit "open chrome" before "navigate" unless explicitly named.
+
+### Verifier
+
+- **`send_email` no longer falsely passes** when a popup steals foreground. Previous logic checked only `after.activeWindow.title` for compose-window absence — a banner popup focusing the agent's window inverted the check and the verifier reported success while Send was never clicked. Fix iterates the full `after.windows` list (`composeStillOpen = (after.windows ?? []).some(w => !w.isMinimized && composeKeywords.test(w.title))`). Also added: success-keyword detection (`message sent | email sent | sent successfully`), `not_just_saved_as_draft` anti-signal (rejects when "Draft saved" appears without success notice), expanded compose regex to include `reply`.
+
+### Doctor
+
+- **Post-doctor "All systems go" panel rewritten** for clarity on the two access paths: MCP server for editor (`clawdcursor mcp`) gets 89 desktop tools (or 6 compound with `--compact`); HTTP daemon (`clawdcursor agent`) for unattended autonomy. Runtime-detects whether an LLM is configured and shows "(you have one)" green or "(none yet)" yellow.
 
 ### Cross-platform integrity
 

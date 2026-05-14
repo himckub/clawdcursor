@@ -80,7 +80,7 @@ metadata:
 >   both palettes - request the compact catalog by filtering `tools/list`
 >   results to the 6 compound names below.
 >
-> Granular mode's 87 tools are kept for back-compat. Compact's 6 tools are ~14× smaller and reduce mis-tool-selection. Use granular only if your runtime MUST have every primitive as its own top-level schema.
+> Granular mode's 89 tools are kept for back-compat. Compact's 6 tools are ~14× smaller and reduce mis-tool-selection. Use granular only if your runtime MUST have every primitive as its own top-level schema.
 
 If you connect via MCP with `--compact`, you get a single tool that takes the
 whole task:
@@ -227,8 +227,8 @@ v0.9 collapses everything onto **MCP — one protocol, two transports**. There i
 
 | Mode | Command | Transport | Brain | Tools available |
 |------|---------|-----------|-------|-----------------|
-| `mcp` | `clawdcursor mcp [--compact]` | stdio | **You** (editor host) | 87 granular (default) or 6 compact (`--compact`) |
-| `agent` (no LLM configured) | `clawdcursor agent` | HTTP `/mcp` | **You** (HTTP client) | 87 granular + 6 compact, both via the same `/mcp` endpoint |
+| `mcp` | `clawdcursor mcp [--compact]` | stdio | **You** (editor host) | 89 granular (default) or 6 compact (`--compact`) |
+| `agent` (no LLM configured) | `clawdcursor agent` | HTTP `/mcp` | **You** (HTTP client) | 89 granular + 6 compact, both via the same `/mcp` endpoint |
 | `agent` (LLM configured)    | `clawdcursor agent` | HTTP `/mcp` | Built-in LLM pipeline | All of the above PLUS the autonomous `submit_task` MCP tool — hand it a plain-English task |
 
 In `mcp` (stdio) and tools-only `agent` (HTTP): **you reason, clawdcursor acts.** There is no built-in LLM in the loop. You call tools, interpret results, decide next steps. In autonomous `agent` mode (LLM configured): clawdcursor reasons AND acts — call the `submit_task` MCP tool with a natural-language instruction, then poll `agent_status`.
@@ -253,7 +253,7 @@ The `start` and `serve` verbs from v0.8 still work as deprecation aliases (they 
 }
 ```
 
-**Granular - 75 individual tools (power-user, back-compat, larger prompt budget):**
+**Granular - 89 individual tools (power-user, back-compat, larger prompt budget):**
 ```json
 {
   "mcpServers": {
@@ -499,7 +499,7 @@ Per-OS setup notes:
 **What's new in 0.9.0** - architecture redesign + behavior tightening:
 
 - **One protocol - MCP. REST is gone.** v0.8 ran two transports in parallel (REST on `/task`, `/execute`, `/tools`, `/favorites` ... plus MCP); v0.9 collapses to MCP with two transports - stdio for editor hosts and streamable HTTP at `/mcp` for daemons. Every former REST endpoint is now an MCP tool: `submit_task`, `abort_task`, `agent_status`, `screenshot_full`, `favorites_*`, `learn_app`, `submit_report`, etc. Only operational endpoints survive as plain HTTP: `/health` (no auth, readiness probe) and `/stop` (auth, localhost-only).
-- **Five directories, not seven.** `core/` (agent loop + pipeline + verifier + safety), `tools/` (87 granular + 6 compact, one registry), `platform/` (Windows / macOS / Linux adapters + Swift host app), `llm/` (provider clients + knowledge), `surface/` (CLI + transports). One concern per directory, no upward dependencies. The legacy v0.7 cascade is fully removed (~12k LOC); the unified pipeline is the only path.
+- **Five directories, not seven.** `core/` (agent loop + pipeline + verifier + safety), `tools/` (89 granular + 6 compact, one registry), `platform/` (Windows / macOS / Linux adapters + Swift host app), `llm/` (provider clients + knowledge), `surface/` (CLI + transports). One concern per directory, no upward dependencies. The legacy v0.7 cascade is fully removed (~12k LOC); the unified pipeline is the only path.
 - **One CLI verb for the daemon.** `clawdcursor agent` (replaces both `start` and `serve`). The daemon auto-detects whether an LLM is configured and lights up the autonomous agent only when it is - no flag required. Old verbs still alias-and-warn through 0.9.x.
 - **Reflector feedback channel.** The verifier now emits typed `Cause[]` (no_pixel_change, modal_intercept, wrong_window_focused, webview_blind, partial_text_match, a11y_target_missing) and an optional `suggestedStrategy`. Behind `CLAWD_REFLECTOR=1`, the pipeline ladder reroutes based on the dominant cause instead of just rolling down - e.g. webview_blind → skip blind/hybrid, jump to vision.
 - **Soft-fail subtask policy.** Verifier rejection at confidence < 0.8 on a single subtask no longer kills the whole chain - it logs a warning and continues. Idempotent operations like "create new canvas in Paint" right after Paint launched (pixel-change = 0 because Paint already opened with a blank canvas) used to abort the chain at subtask 2; now the chain proceeds to the actual work.
