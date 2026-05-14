@@ -1,8 +1,8 @@
 # macOS Setup Guide
 
-> **v0.7.14+**: Keyboard automation now routes through `osascript` + System Events natively. `clawdcursor grant` triggers system permission dialogs automatically. Run `clawdcursor doctor` to verify your setup.
+> **v0.9.0**: macOS support is fully preserved from the v0.7.14 baseline — Swift host app + JXA + System Events. `clawdcursor grant` still triggers the TCC permission dialogs; `clawdcursor doctor` still verifies the install. The CLI verb to start the daemon is now `clawdcursor agent` (was `start` in v0.8). `start` still works as a deprecation alias for the 0.9.x cycle.
 
-Complete guide to running Clawd Cursor on macOS. The agent uses **JXA (JavaScript for Automation)** and **System Events** for native UI automation (v0.7.14+: keyboard shortcuts are routed through System Events for TCC safety), and **CDP (Chrome DevTools Protocol)** for browser interactions.
+Complete guide to running Clawd Cursor on macOS. The agent uses **JXA (JavaScript for Automation)** and **System Events** for native UI automation (keyboard shortcuts route through System Events for TCC safety), a native **Swift host app** (`ClawdCursorHost`) for screen capture + accessibility tree under proper TCC consent, and **CDP (Chrome DevTools Protocol)** for browser interactions.
 
 ---
 
@@ -179,10 +179,32 @@ npm start -- --port 4000
 
 ### Send a task
 
+Two ways. From the CLI:
+
 ```bash
-curl http://localhost:3847/task -H "Content-Type: application/json" \
-  -d '{"task": "Open Safari and go to google.com"}'
+clawdcursor task "Open Safari and go to google.com"
 ```
+
+Or via MCP HTTP (JSON-RPC, what an external AI agent would use):
+
+```bash
+TOKEN=$(cat ~/.clawdcursor/token)
+curl -s -X POST http://127.0.0.1:3847/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "submit_task",
+      "arguments": {"task": "Open Safari and go to google.com"}
+    }
+  }'
+```
+
+The legacy REST `/task` endpoint was deleted in v0.9 — every former REST endpoint is now an MCP tool. See `docs/internal/v0.9-design.md` for the full mapping.
 
 ---
 

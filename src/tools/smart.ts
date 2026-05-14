@@ -13,8 +13,8 @@
  */
 
 import type { ToolDefinition, ToolContext } from './types';
-import { OcrEngine } from '../ocr-engine';
-import { getBrowserProcessNames } from '../browser-config';
+import { OcrEngine } from '../platform/ocr-engine';
+import { getBrowserProcessNames } from '../llm/browser-config';
 
 // Shared OCR engine singleton — avoids re-initialization per call
 let sharedOcr: OcrEngine | null = null;
@@ -58,6 +58,7 @@ export function getSmartTools(): ToolDefinition[] {
         },
       },
       category: 'perception',
+      safetyTier: 0,
       handler: async (params, ctx) => {
         await ctx.ensureInitialized();
         const scope = (params.scope as string) || 'window';
@@ -191,6 +192,7 @@ export function getSmartTools(): ToolDefinition[] {
         },
       },
       category: 'orchestration',
+      safetyTier: 1,
       handler: async (params, ctx) => {
         await ctx.ensureInitialized();
         const target = params.target as string;
@@ -317,12 +319,22 @@ export function getSmartTools(): ToolDefinition[] {
           return { text: `Clicked "${target}" via UI Automation (invoke_element)` };
         }
 
-        // OCR found the element — coordinate click
+        // OCR found the element — coordinate click. OCR returns PHYSICAL
+        // pixels (it's running against `screen.grab()` output). On Windows
+        // with DPI scaling > 100%, nut-js mouseClick expects LOGICAL pixels,
+        // so a physical (1800, 900) on a 2x display would land at logical
+        // (1800, 900) — which is far past the actual element. Apply the
+        // physical→logical DPI correction. On 100% DPI dpiRatio === 1 and
+        // this is a no-op, so the fix is safe across every Windows config
+        // and on macOS / Linux (where dpiRatio always returns 1).
         if (ocrMatch) {
-          await ctx.desktop.mouseClick(ocrMatch.x, ocrMatch.y);
+          const dpi = ctx.desktop.getDpiRatio?.() || 1;
+          const cx = Math.round(ocrMatch.x / dpi);
+          const cy = Math.round(ocrMatch.y / dpi);
+          await ctx.desktop.mouseClick(cx, cy);
           ctx.a11y.invalidateCache();
           const warningSuffix = ocrMatch.warning ? `  [WARNING: ${ocrMatch.warning} — verify with read_screen]` : '';
-          return { text: `Clicked "${target}" via OCR (matched "${ocrMatch.text}" at ${ocrMatch.x},${ocrMatch.y})${warningSuffix}` };
+          return { text: `Clicked "${target}" via OCR (matched "${ocrMatch.text}" at ${cx},${cy}${dpi > 1 ? ` — DPI-corrected from physical ${ocrMatch.x},${ocrMatch.y}` : ''})${warningSuffix}` };
         }
 
         // a11y had bounds but couldn't invoke — coordinate fallback
@@ -411,6 +423,7 @@ export function getSmartTools(): ToolDefinition[] {
         },
       },
       category: 'keyboard',
+      safetyTier: 1,
       handler: async (params, ctx) => {
         await ctx.ensureInitialized();
         const text = params.text as string;
@@ -475,10 +488,12 @@ export function getSmartTools(): ToolDefinition[] {
           }
         }
 
-        // Type via clipboard paste
+        // Type via clipboard paste. `mod+v` resolves to Cmd+V on macOS and
+        // Ctrl+V everywhere else — the platform-portable key combo handles
+        // the OS difference without raw `process.platform` branching here.
         await ctx.a11y.writeClipboard(text);
         await new Promise(r => setTimeout(r, 50));
-        await ctx.desktop.keyPress(process.platform === 'darwin' ? 'cmd+v' : 'ctrl+v');
+        await ctx.desktop.keyPress('mod+v');
         await new Promise(r => setTimeout(r, 100));
         ctx.a11y.invalidateCache();
 
@@ -528,6 +543,8 @@ export function getSmartTools(): ToolDefinition[] {
         },
       },
       category: 'window',
+      compactGroup: 'accessibility',
+      safetyTier: 1,
       handler: async (params, ctx) => {
         await ctx.ensureInitialized();
 

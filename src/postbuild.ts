@@ -9,6 +9,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 function copyDir(srcDir: string, dstDir: string): number {
@@ -30,20 +31,37 @@ function copyDir(srcDir: string, dstDir: string): number {
 }
 
 const repoRoot  = path.join(__dirname, '..');
-const srcGuides = path.join(repoRoot, 'src', 'pipeline', 'knowledge', 'guides');
-const dstGuides = path.join(repoRoot, 'dist', 'pipeline', 'knowledge', 'guides');
+const srcGuides = path.join(repoRoot, 'src', 'llm', 'knowledge', 'guides');
+const dstGuides = path.join(repoRoot, 'dist', 'llm', 'knowledge', 'guides');
 const guideCount = copyDir(srcGuides, dstGuides);
+
+// Suppress "Run consent" / "Run doctor" hints if the user already did them
+// on this machine. The build script can detect prior state from $HOME and
+// the package's own config file.
+const consentGiven = fs.existsSync(path.join(os.homedir(), '.clawdcursor', 'consent'));
+const configPresent = fs.existsSync(path.join(repoRoot, '.clawdcursor-config.json'));
+
+const startBlock = consentGiven
+  ? `  [OK] Consent already accepted from a previous run.\n\n  Pick a path:`
+  : `  Start here:\n    clawdcursor consent     One-time desktop control authorization\n\n  Then pick a path:`;
+
+const doctorLine = configPresent
+  ? `clawdcursor doctor   (optional) Re-check / change AI provider + models`
+  : `clawdcursor doctor   Configure AI provider + models`;
 
 console.log(`
 🐾 Clawd Cursor built successfully!
-   (bundled ${guideCount} app-knowledge guides → dist/pipeline/knowledge/guides/)
+   (bundled ${guideCount} app-knowledge guides → dist/llm/knowledge/guides/)
 
-  clawdcursor start     Start the desktop control agent
-  clawdcursor mcp       Run as MCP server (for Claude Code, Cursor, etc.)
-  clawdcursor doctor    Auto-detect and configure AI providers
-  clawdcursor status    Check setup status
-  clawdcursor stop      Stop the agent
-  clawdcursor uninstall Remove all config and data
+${startBlock}
+    Autonomous agent →  ${doctorLine}
+                        clawdcursor agent    Start the daemon (HTTP + MCP on :3847)
 
-  Run 'clawdcursor consent' first to grant desktop control permissions.
+    MCP-only         →  clawdcursor mcp      stdio MCP for editor integration
+                                             (Claude Code, Cursor, Windsurf, Zed)
+
+  Other:
+    clawdcursor status      Check setup readiness
+    clawdcursor stop        Stop a running daemon
+    clawdcursor uninstall   Remove all config and data
 `);

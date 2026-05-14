@@ -1,9 +1,30 @@
 /**
  * Preprocessor tests — strategy decisions per task shape.
+ *
+ * Phase 3 (marketplace) moved most curated guides to seed-registry/. Point
+ * the loader's bundled dir at the seed copy for the duration of the suite
+ * so the gmail/outlook/etc. knowledge-injection assertions still resolve.
+ * Also disable the remote registry so prefetchGuideForApp doesn't try to
+ * hit the network during tests.
  */
 
-import { describe, it, expect } from 'vitest';
-import { preprocess, requiresLlm, usesVision } from '../pipeline/preprocessor/preprocessor';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import * as path from 'path';
+import { preprocess, requiresLlm, usesVision } from '../core/preprocessor/preprocessor';
+
+const SEED_REGISTRY = path.resolve(__dirname, '../../seed-registry/guides');
+const ORIG_BUNDLED  = process.env.CLAWD_BUNDLED_GUIDES_DIR;
+const ORIG_OFF      = process.env.CLAWD_GUIDES_REGISTRY_OFF;
+beforeAll(() => {
+  process.env.CLAWD_BUNDLED_GUIDES_DIR = SEED_REGISTRY;
+  process.env.CLAWD_GUIDES_REGISTRY_OFF = '1';
+});
+afterAll(() => {
+  if (ORIG_BUNDLED === undefined) delete process.env.CLAWD_BUNDLED_GUIDES_DIR;
+  else process.env.CLAWD_BUNDLED_GUIDES_DIR = ORIG_BUNDLED;
+  if (ORIG_OFF === undefined) delete process.env.CLAWD_GUIDES_REGISTRY_OFF;
+  else process.env.CLAWD_GUIDES_REGISTRY_OFF = ORIG_OFF;
+});
 
 describe('preprocess — strategy selection', () => {
   it.each([
@@ -39,9 +60,28 @@ describe('preprocess — strategy selection', () => {
     'compute 5 plus 7 in calculator',
     'summarize this screen',
     'fill out the registration form',
-    'send email to bob@x.com',
   ])('%s → blind', (task) => {
     expect(preprocess(task).strategy).toBe('blind');
+  });
+
+  it.each([
+    'send email to bob@x.com',
+    'send an email to alice@example.org with subject Hello',
+    'compose an email to team@corp.com',
+    'send message to support@vendor.io introducing yourself',
+  ])('%s → playbook(compose-send)', (task) => {
+    const r = preprocess(task);
+    expect(r.strategy).toBe('playbook');
+    expect(r.hints.playbookName).toBe('compose-send');
+  });
+
+  it.each([
+    'find and replace foo with bar',
+    'replace all "old" with "new"',
+  ])('%s → playbook(find-replace)', (task) => {
+    const r = preprocess(task);
+    expect(r.strategy).toBe('playbook');
+    expect(r.hints.playbookName).toBe('find-replace');
   });
 });
 
@@ -75,8 +115,10 @@ describe('preprocess — knowledge injection', () => {
   });
 
   it('no guide when app is unknown', () => {
+    // Use a fictional app name that no detectApp rule matches. Real apps like
+    // 'Notepad' now resolve to a bundled guide, so they can't stand in for "unknown".
     const r = preprocess('type something', {
-      activeWindowTitle: 'Notepad',
+      activeWindowTitle: 'SomeObscureNicheApp_v3.2.1',
     });
     expect(r.hints.guide).toBeUndefined();
   });

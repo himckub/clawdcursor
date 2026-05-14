@@ -8,7 +8,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import type { ToolDefinition } from './types';
-import { DEFAULT_CDP_PORT } from '../browser-config';
+import { DEFAULT_CDP_PORT } from '../llm/browser-config';
+import { resolveAlias } from '../core/router/aliases';
 
 const execFileAsync = promisify(execFile);
 
@@ -24,6 +25,7 @@ function agentHeaders(): Record<string, string> {
   const token = loadAgentToken();
   return {
     'Content-Type': 'application/json',
+    'Accept': 'application/json, text/event-stream',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
   };
 }
@@ -32,21 +34,43 @@ function formatAgentError(err: any): string {
   const code = err?.cause?.code ?? err?.code ?? '';
   const msg = err?.message ?? String(err);
   if (code === 'ECONNREFUSED' || msg.includes('ECONNREFUSED')) {
-    return 'The clawdcursor agent server is not running. Start it first with: clawdcursor start';
+    return 'The clawdcursor agent daemon is not running. Start it first with: clawdcursor agent';
   }
-  return `Agent unavailable: ${msg}`;
+  return `clawdcursor agent unavailable: ${msg}`;
 }
 
 /** Map HTTP status from agent API to an actionable message. */
 function formatAgentHttpError(status: number, body: string, statusText: string): string {
   switch (status) {
     case 404:
-      return 'The /task endpoint was not found. Make sure you\'re running clawdcursor v0.7.2+ with: clawdcursor start';
+      return 'The /mcp endpoint was not found. Make sure you\'re running clawdcursor v0.9.0+ with: clawdcursor agent';
     case 401:
-      return 'Authentication failed. The server token may have changed. Try: clawdcursor stop && clawdcursor start';
+      return 'Authentication failed. The server token may have changed. Try: clawdcursor stop && clawdcursor agent';
     default:
-      return `Agent API error ${status}: ${body || statusText}`;
+      return `clawdcursor agent API error ${status}: ${body || statusText}`;
   }
+}
+
+let mcpRpcId = 0;
+async function mcpCall(toolName: string, args: Record<string, unknown> = {}): Promise<any> {
+  mcpRpcId += 1;
+  const resp = await fetch('http://127.0.0.1:3847/mcp', {
+    method: 'POST',
+    headers: agentHeaders(),
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: mcpRpcId,
+      method: 'tools/call',
+      params: { name: toolName, arguments: args },
+    }),
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw Object.assign(new Error(formatAgentHttpError(resp.status, body, resp.statusText)), { status: resp.status });
+  }
+  const data: any = await resp.json();
+  if (data?.error) throw new Error(`MCP error: ${data.error.message ?? JSON.stringify(data.error)}`);
+  return data?.result;
 }
 
 async function commandExists(cmd: string): Promise<boolean> {
@@ -68,41 +92,40 @@ export function getOrchestrationTools(): ToolDefinition[] {
         timeout: { type: 'number', description: 'Timeout in seconds (default: 300)', required: false },
       },
       category: 'orchestration',
+      compactGroup: 'task',
+      safetyTier: 1,
       handler: async ({ task, timeout }) => {
         const timeoutMs = (timeout ?? 300) * 1000;
         const start = Date.now();
         try {
-          const resp = await fetch('http://127.0.0.1:3847/task', {
-            method: 'POST',
-            headers: agentHeaders(),
-            body: JSON.stringify({ task }),
-          });
-          if (!resp.ok) {
-            const body = await resp.text().catch(() => '');
-            return { text: formatAgentHttpError(resp.status, body, resp.statusText), isError: true };
-          }
+          // Submit via MCP submit_task — non-blocking; returns immediately.
+          await mcpCall('submit_task', { task });
+
+          // Poll agent_status until idle or timeout.
           while (Date.now() - start < timeoutMs) {
             await new Promise(r => setTimeout(r, 2000));
             try {
-              const status = await fetch('http://127.0.0.1:3847/status');
-              const data: any = await status.json();
-              if (data.status === 'idle') {
-                const result = data.lastResult;
+              const result = await mcpCall('agent_status');
+              const text = result?.content?.[0]?.text ?? '';
+              const data: any = text ? JSON.parse(text) : null;
+              if (data?.status === 'idle') {
+                const last = data.lastResult;
                 return {
                   text: JSON.stringify({
-                    success: result?.success ?? false,
-                    verified: result?.verified ?? false,
-                    steps: result?.steps?.length ?? 0,
+                    success: last?.success ?? false,
+                    verified: last?.verified ?? false,
+                    steps: last?.steps?.length ?? 0,
                     duration: `${((Date.now() - start) / 1000).toFixed(1)}s`,
-                    lastAction: result?.steps?.slice(-1)?.[0]?.description ?? '(unknown)',
+                    lastAction: last?.steps?.slice(-1)?.[0]?.description ?? '(unknown)',
                   }, null, 2),
                 };
               }
             } catch { /* keep polling */ }
           }
-          await fetch('http://127.0.0.1:3847/abort', { method: 'POST', headers: agentHeaders() }).catch(() => {});
+          await mcpCall('abort_task').catch(() => {});
           return { text: `Agent timed out after ${timeout ?? 300}s. Task aborted.`, isError: true };
         } catch (err: any) {
+          if (err?.status) return { text: err.message, isError: true };
           return { text: formatAgentError(err), isError: true };
         }
       },
@@ -110,44 +133,100 @@ export function getOrchestrationTools(): ToolDefinition[] {
 
     {
       name: 'open_app',
-      description: 'Open an application by name. Uses platform-native launch.',
+      description: 'Open an application by name. Uses the cross-OS app alias table + the PlatformAdapter\'s launchApp (UWP-aware on Windows, `open -a` on macOS, gtk-launch / xdg-open on Linux).',
       parameters: {
-        name: { type: 'string', description: 'Application name (e.g. "notepad", "calc", "mspaint")', required: true },
+        name: { type: 'string', description: 'Application name (e.g. "notepad", "calc", "mspaint", "Outlook", "Chrome")', required: true },
       },
       category: 'orchestration',
+      compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ name }, ctx) => {
         await ctx.ensureInitialized();
+        const rawName = String(name ?? '');
+        if (!rawName) {
+          return { text: 'open_app: `name` is required', isError: true };
+        }
+
+        // Resolve through the canonical alias table so "Notepad" / "notepad" /
+        // "Calculator" / "calc" all map to the right launch hints. The MCP
+        // open_app used to call `Start-Process <name>` directly, which fails
+        // for UWP apps (Calculator, Win11 Notepad) and is case-sensitive on
+        // PowerShell's Start-Process arg. The alias table + platform adapter
+        // is the same path the autonomous agent-loop uses.
+        const alias = resolveAlias(rawName);
+
+        // If we have a PlatformAdapter (we always do post-v0.9 init), use it.
+        // Falls back to the old execFile path only when the adapter isn't
+        // available (shouldn't happen in normal operation).
+        if (ctx.platform && typeof ctx.platform.launchApp === 'function') {
+          let launchName = rawName;
+          if (alias) {
+            if (process.platform === 'darwin') {
+              launchName = alias.macOSAppName ?? rawName;
+            } else if (process.platform === 'win32') {
+              launchName = alias.executable ?? rawName;
+            } else {
+              launchName = alias.executable?.replace(/\.exe$/i, '') ?? rawName;
+            }
+          }
+          try {
+            const res = await ctx.platform.launchApp(launchName, {
+              alwaysNewInstance: alias?.alwaysNewInstance,
+              uwpAppId: alias?.uwpAppId,
+              searchTerm: alias?.searchTerm
+                ?? (process.platform === 'darwin' ? alias?.macOSAppName : undefined),
+            });
+            ctx.a11y.invalidateCache();
+            return {
+              text: res?.title
+                ? `Opened "${rawName}" (pid=${res.pid}, window="${res.title}")`
+                : `Launched "${rawName}" (no window surfaced yet)`,
+            };
+          } catch (err: any) {
+            return { text: `Failed to launch "${rawName}": ${err?.message ?? err}`, isError: true };
+          }
+        }
+
+        // Fallback: pre-adapter path (kept for safety, should be unreachable).
         try {
           if (process.platform === 'win32') {
-            await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `Start-Process "${name}"`], { timeout: 10000 });
-          } else if (process.platform === 'darwin') {
-            await execFileAsync('open', ['-a', name], { timeout: 10000 });
-          } else {
-            // Linux: prefer desktop-aware launchers, then direct executable.
-            if (await commandExists('gtk-launch')) {
-              await execFileAsync('gtk-launch', [name], { timeout: 10000 });
-            } else if (await commandExists('xdg-open')) {
-              await execFileAsync('xdg-open', [name], { timeout: 10000 });
+            const exe = alias?.executable ?? rawName;
+            const uwpId = alias?.uwpAppId;
+            if (uwpId) {
+              await execFileAsync('explorer.exe', [`shell:AppsFolder\\${uwpId}`], { timeout: 10000 });
             } else {
-              await execFileAsync(name, [], { timeout: 10000 });
+              await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `Start-Process "${exe}"`], { timeout: 10000 });
+            }
+          } else if (process.platform === 'darwin') {
+            await execFileAsync('open', ['-a', alias?.macOSAppName ?? rawName], { timeout: 10000 });
+          } else {
+            const linuxName = alias?.executable?.replace(/\.exe$/i, '') ?? rawName;
+            if (await commandExists('gtk-launch')) {
+              await execFileAsync('gtk-launch', [linuxName], { timeout: 10000 });
+            } else if (await commandExists('xdg-open')) {
+              await execFileAsync('xdg-open', [linuxName], { timeout: 10000 });
+            } else {
+              await execFileAsync(linuxName, [], { timeout: 10000 });
             }
           }
           await new Promise(r => setTimeout(r, 2000));
           ctx.a11y.invalidateCache();
-          return { text: `Launched: ${name}` };
+          return { text: `Launched: ${rawName}` };
         } catch (err: any) {
-          return { text: `Failed to launch "${name}": ${err.message}`, isError: true };
+          return { text: `Failed to launch "${rawName}": ${err.message}`, isError: true };
         }
       },
     },
 
     {
       name: 'navigate_browser',
-      description: `Open a URL in the browser. Launches with CDP enabled (port ${DEFAULT_CDP_PORT}) for DOM interaction. Call cdp_connect after.`,
+      description: `Open a URL in the browser. Launches with CDP enabled (port ${DEFAULT_CDP_PORT}) for DOM interaction. Call cdp_connect after. Tier 2 (mutation): triggers network egress to an arbitrary destination + spawns/attaches to a browser process.`,
       parameters: {
         url: { type: 'string', description: 'URL to navigate to', required: true },
       },
       category: 'orchestration',
+      compactGroup: 'window',
+      safetyTier: 2,
       handler: async ({ url }, ctx) => {
         await ctx.ensureInitialized();
         if (await ctx.cdp.isConnected()) {
@@ -202,6 +281,8 @@ export function getOrchestrationTools(): ToolDefinition[] {
         seconds: { type: 'number', description: 'Duration to wait (0.1 to 30)', required: true, minimum: 0.1, maximum: 30 },
       },
       category: 'orchestration',
+      compactGroup: 'computer',
+      safetyTier: 0,
       handler: async ({ seconds }) => {
         await new Promise(r => setTimeout(r, seconds * 1000));
         return { text: `Waited ${seconds}s` };

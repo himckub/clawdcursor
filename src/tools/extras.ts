@@ -20,6 +20,7 @@
  */
 
 import type { ToolDefinition } from './types';
+import { saveLearnedLesson, mergeIntoUserGuide, resolveAppKey } from '../llm/knowledge/loader';
 
 function notSupported(tool: string): { text: string; isError: true } {
   return {
@@ -50,6 +51,8 @@ export function getExtraTools(): ToolDefinition[] {
         dy: { type: 'number', description: 'Y offset in image-space pixels', required: true },
       },
       category: 'mouse',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ dx, dy }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_move_relative');
@@ -67,6 +70,8 @@ export function getExtraTools(): ToolDefinition[] {
         y: { type: 'number', description: 'Y coordinate in image-space', required: true },
       },
       category: 'mouse',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_middle_click');
@@ -84,6 +89,8 @@ export function getExtraTools(): ToolDefinition[] {
         y: { type: 'number', description: 'Y coordinate in image-space', required: true },
       },
       category: 'mouse',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_triple_click');
@@ -105,6 +112,8 @@ export function getExtraTools(): ToolDefinition[] {
         },
       },
       category: 'mouse',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ button }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_down');
@@ -124,6 +133,8 @@ export function getExtraTools(): ToolDefinition[] {
         },
       },
       category: 'mouse',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ button }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_up');
@@ -145,6 +156,8 @@ export function getExtraTools(): ToolDefinition[] {
         amount: { type: 'number', description: 'Wheel ticks (default: 3)', required: false, default: 3 },
       },
       category: 'mouse',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y, direction, amount }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_scroll_horizontal');
@@ -172,6 +185,8 @@ export function getExtraTools(): ToolDefinition[] {
         },
       },
       category: 'mouse',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ path }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('mouse_drag_stepped');
@@ -211,6 +226,8 @@ export function getExtraTools(): ToolDefinition[] {
         key: { type: 'string', description: 'Key token (e.g. "shift", "ctrl", "a", "Return")', required: true },
       },
       category: 'keyboard',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ key }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('key_down');
@@ -226,6 +243,8 @@ export function getExtraTools(): ToolDefinition[] {
         key: { type: 'string', description: 'Key token', required: true },
       },
       category: 'keyboard',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ key }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('key_up');
@@ -247,6 +266,8 @@ export function getExtraTools(): ToolDefinition[] {
         title:       { type: 'string', description: 'Optional title-substring match', required: false },
       },
       category: 'window',
+      compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('maximize_window');
@@ -269,6 +290,8 @@ export function getExtraTools(): ToolDefinition[] {
         title:       { type: 'string', description: 'Optional title-substring match', required: false },
       },
       category: 'window',
+      compactGroup: 'window',
+      safetyTier: 2,
       handler: async ({ processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('minimize_window_to_taskbar');
@@ -291,6 +314,8 @@ export function getExtraTools(): ToolDefinition[] {
         title:       { type: 'string', description: 'Optional title-substring match', required: false },
       },
       category: 'window',
+      compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('restore_window');
@@ -314,6 +339,8 @@ export function getExtraTools(): ToolDefinition[] {
         title:       { type: 'string', description: 'Optional title-substring match', required: false },
       },
       category: 'window',
+      compactGroup: 'window',
+      safetyTier: 2,
       handler: async ({ processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('close_window');
@@ -340,6 +367,8 @@ export function getExtraTools(): ToolDefinition[] {
         title:       { type: 'string', description: 'Optional title-substring match', required: false },
       },
       category: 'window',
+      compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ x, y, width, height, processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('resize_window');
@@ -363,6 +392,8 @@ export function getExtraTools(): ToolDefinition[] {
         'Use this before desktop_screenshot with displayIndex to target a specific monitor.',
       parameters: {},
       category: 'window',
+      compactGroup: 'window',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('list_displays');
@@ -385,6 +416,8 @@ export function getExtraTools(): ToolDefinition[] {
         processId:   { type: 'number', description: 'Optional process id to scope the search', required: false },
       },
       category: 'perception',
+      compactGroup: 'accessibility',
+      safetyTier: 1,
       handler: async ({ name, controlType, processId }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('focus_element');
@@ -413,6 +446,8 @@ export function getExtraTools(): ToolDefinition[] {
         intervalMs:  { type: 'number', description: 'Poll interval in ms (default 250)', required: false, default: 250 },
       },
       category: 'perception',
+      compactGroup: 'accessibility',
+      safetyTier: 0,
       handler: async ({ name, controlType, processId, timeoutMs, intervalMs }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('wait_for_element');
@@ -435,11 +470,16 @@ export function getExtraTools(): ToolDefinition[] {
       name: 'open_file',
       description:
         'Open a file or folder in the OS default application. ' +
-        'Uses `open` (macOS), `xdg-open` (Linux), and explorer / ShellExecute (Windows).',
+        'Uses `open` (macOS), `xdg-open` (Linux), and explorer / ShellExecute (Windows). ' +
+        'Tier 2 (mutation): on some platforms "opening" a file may execute it ' +
+        '(.exe on Windows, .app on macOS, scripts with executable bit on Linux), ' +
+        'and the registered handler can be privileged or destructive.',
       parameters: {
         path: { type: 'string', description: 'Absolute filesystem path', required: true },
       },
       category: 'orchestration',
+      compactGroup: 'window',
+      safetyTier: 2,
       handler: async ({ path: filePath }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('open_file');
@@ -468,11 +508,16 @@ export function getExtraTools(): ToolDefinition[] {
 
     {
       name: 'open_url',
-      description: 'Open a URL in the OS default browser. Non-browser-agnostic counterpart to navigate_browser.',
+      description:
+        'Open a URL in the OS default browser. Non-browser-agnostic counterpart to navigate_browser. ' +
+        'Tier 2 (mutation): triggers network egress to an arbitrary destination and may launch ' +
+        'the registered HTTP handler (which can be any app, not strictly a browser).',
       parameters: {
         url: { type: 'string', description: 'https:// or http:// URL', required: true },
       },
       category: 'orchestration',
+      compactGroup: 'window',
+      safetyTier: 2,
       handler: async ({ url }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('open_url');
@@ -499,10 +544,163 @@ export function getExtraTools(): ToolDefinition[] {
     },
 
     {
+      // open_uri — the general OS protocol-handler escape route.
+      //
+      // Every OS ships a protocol-handler registry. Windows uses
+      // HKCR\\<scheme>\\shell\\open\\command. macOS uses LaunchServices.
+      // Linux uses xdg-mime + .desktop files. The user's installed apps
+      // register themselves as handlers (or the user picks one):
+      //   mailto:    → default mail client
+      //   tel:       → default phone app (Skype, FaceTime, dialer)
+      //   sms:       → default messaging app
+      //   webcal:    → default calendar
+      //   slack:     → Slack
+      //   vscode:    → VS Code
+      //   obsidian:  → Obsidian
+      //   spotify:   → Spotify
+      //   zoommtg:   → Zoom
+      //   discord:   → Discord
+      //   file:      → OS file-association dispatcher
+      //   http(s):   → default browser
+      //
+      // This is THE app-agnostic escape route. ONE tool, every app that
+      // registers a protocol handler. The agent does not need to know
+      // which app is configured — the OS routes for us. Zero vision,
+      // zero a11y, zero app-specific code.
+      //
+      // The agent constructs the URI from semantic args. For mailto:
+      // that's to/cc/subject/body. For tel: it's just a number. For
+      // slack: it's a workspace and channel. The agent picks the
+      // scheme; we encode and dispatch.
+      name: 'open_uri',
+      description: 'Open ANY registered URI (mailto:, tel:, sms:, webcal:, file:, slack:, vscode:, obsidian:, spotify:, zoommtg:, https:, custom-scheme:, ...) via the OS protocol-handler registry. The OS routes to whichever app the user has registered as the handler. Replaces dozens of app-specific shortcuts with one general primitive. For mailto:, use the convenience helper compose_uri_mailto, or pass a full pre-built URI. Tier 2 (mutation): the OS will dispatch to whatever app is registered for the scheme — that handler may be privileged or destructive (file: opens files which on Windows can execute .exe; vscode: opens a workspace; zoommtg: joins a call). The dispatcher does no scheme allowlist — callers + the agent loop are responsible for not constructing dangerous URIs.',
+      parameters: {
+        uri: { type: 'string', description: 'A full URI like "mailto:bob@example.com?subject=hi&body=hello", "tel:+15551234", "slack://channel?team=T123&id=C456", "vscode://file/Users/me/code/x.ts", "https://example.com". Must be properly URL-encoded.', required: true },
+      },
+      category: 'orchestration',
+      compactGroup: 'window',
+      safetyTier: 2,
+      handler: async ({ uri }, ctx) => {
+        await ctx.ensureInitialized();
+        if (!ctx.platform) return needPlatform('open_uri');
+        const u = String(uri ?? '').trim();
+        if (!u) return { text: 'open_uri: uri is required', isError: true };
+        // Surface what the URI scheme is so the operator can audit the
+        // dispatch ("open_uri: mailto: → default handler").
+        const schemeMatch = u.match(/^([a-z][a-z0-9+.-]*):/i);
+        if (!schemeMatch) {
+          return { text: 'open_uri: argument must be a URI with a scheme (e.g. mailto:, tel:, https:, slack:)', isError: true };
+        }
+        const scheme = schemeMatch[1].toLowerCase();
+        try {
+          if (ctx.platform.platform === 'darwin') {
+            await ctx.platform.launchApp('open', { url: u });
+            return { text: `Dispatched ${scheme}: URI to the OS default handler. (URI: ${u.length > 120 ? u.slice(0, 120) + '…' : u})` };
+          }
+          if (ctx.platform.platform === 'linux') {
+            await ctx.platform.launchApp('xdg-open', { url: u });
+            return { text: `Dispatched ${scheme}: URI to the OS default handler. (URI: ${u.length > 120 ? u.slice(0, 120) + '…' : u})` };
+          }
+          // Windows: shell-routed dispatch (explorer.exe mailto:, rundll32
+          // url.dll, cmd /c start) silently fails for New Outlook and other
+          // UWP-packaged handlers — the call returns without opening a new
+          // window. The reliable path is to resolve the registered handler
+          // executable and invoke IT directly, then verify a new visible
+          // top-level window actually appeared.
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { resolveSchemeHandlerExecutable, launchHandlerAndVerify } = await import('../platform/uri-handler');
+          const exe = await resolveSchemeHandlerExecutable(scheme);
+          if (!exe) {
+            return {
+              text: `open_uri: no registered Windows handler found for "${scheme}:". URI was not dispatched.`,
+              isError: true,
+            };
+          }
+          const launchResult = await launchHandlerAndVerify(exe, u, { waitMs: 5000 });
+          if (!launchResult.success) {
+            return {
+              text: `open_uri: failed to launch handler "${exe}" for ${scheme}: — ${launchResult.error ?? 'unknown error'}`,
+              isError: true,
+            };
+          }
+          if (!launchResult.windowOpened) {
+            return {
+              text: `open_uri: handler "${exe}" was launched with ${scheme}: but no new window appeared within 5s. The handler probably routed the URI into an existing instance silently. Drive the app's UI directly instead.`,
+              isError: true,
+            };
+          }
+          return { text: `Opened ${scheme}: in the registered handler. New window appeared: "${launchResult.hwndLabel ?? '(handle unknown)'}". (URI: ${u.length > 120 ? u.slice(0, 120) + '…' : u})` };
+        } catch (err) {
+          return {
+            text: `open_uri failed: ${err instanceof Error ? err.message : String(err)}`,
+            isError: true,
+          };
+        }
+      },
+    },
+
+    {
+      // build_uri — helper for the common case where the agent has
+      // semantic fields (recipient, subject, body) and wants the right
+      // URI without doing the encoding itself. Pure: returns the URI as
+      // text, no I/O. Generalizes the old compose_email by parameterizing
+      // the scheme.
+      name: 'build_uri',
+      description: 'Build a properly-encoded URI from a scheme + semantic fields. Returns the URI as text; pair with open_uri to dispatch it. Examples: scheme="mailto" + to/subject/body → RFC 6068 mailto URI. scheme="tel" + path="+15551234" → tel:+15551234. scheme="slack" + team/channel → slack URI.',
+      parameters: {
+        scheme: { type: 'string', description: 'URI scheme without the colon: mailto, tel, sms, webcal, slack, vscode, obsidian, spotify, https, etc.', required: true },
+        path:   { type: 'string', description: 'Scheme-specific path (for mailto: the recipient address; for tel:/sms: the number; for https: the host+path). URL-encoded for you.', required: false },
+        query:  { type: 'string', description: 'JSON object of query parameters, e.g. {"subject":"hi","body":"hello"}. Each value will be URL-encoded.', required: false },
+      },
+      category: 'orchestration',
+      compactGroup: 'window',
+      safetyTier: 0,
+      handler: async ({ scheme, path, query }) => {
+        const s = String(scheme ?? '').trim().toLowerCase();
+        if (!s || !/^[a-z][a-z0-9+.-]*$/.test(s)) {
+          return { text: 'build_uri: scheme must be lowercase letters/digits/+/./- starting with a letter', isError: true };
+        }
+        // Encode aggressively so cross-shell dispatch is safe; standard
+        // encodeURIComponent leaves `'` and `"` literal which would trip
+        // shell-meta guards.
+        const safe = (v: string): string =>
+          encodeURIComponent(v).replace(/'/g, '%27').replace(/"/g, '%22');
+        // Path: preserve @ and , for mailto-style multi-recipient; preserve
+        // + for tel: numbers. Other punctuation gets encoded.
+        const encodedPath = path
+          ? safe(String(path))
+              .replace(/%40/g, '@')
+              .replace(/%2C/g, ',')
+              .replace(/%2B/g, '+')
+              .replace(/%2F/g, '/')
+          : '';
+        let queryStr = '';
+        if (query) {
+          let obj: Record<string, unknown>;
+          try {
+            obj = typeof query === 'string' ? JSON.parse(query) : (query as Record<string, unknown>);
+          } catch {
+            return { text: 'build_uri: query must be valid JSON object', isError: true };
+          }
+          const parts: string[] = [];
+          for (const [k, v] of Object.entries(obj)) {
+            if (v === undefined || v === null) continue;
+            parts.push(`${safe(k)}=${safe(String(v))}`);
+          }
+          if (parts.length) queryStr = '?' + parts.join('&');
+        }
+        const uri = `${s}:${encodedPath}${queryStr}`;
+        return { text: uri };
+      },
+    },
+
+    {
       name: 'get_system_time',
       description: 'Return the current system time as ISO 8601 UTC + local components. Zero I/O.',
       parameters: {},
       category: 'perception',
+      compactGroup: 'system',
+      safetyTier: 0,
       handler: async () => {
         const now = new Date();
         return {
@@ -534,6 +732,8 @@ export function getExtraTools(): ToolDefinition[] {
         },
       },
       category: 'window',
+      compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ index, direction }, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('switch_tab_os');
@@ -556,11 +756,181 @@ export function getExtraTools(): ToolDefinition[] {
       description: 'Emit the OS-specific Undo shortcut (Ctrl+Z on Win/Linux, Cmd+Z on macOS) into the focused window.',
       parameters: {},
       category: 'keyboard',
+      compactGroup: 'system',
+      safetyTier: 1,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         if (!ctx.platform) return needPlatform('undo_last');
         await ctx.platform.keyPress('mod+z');
         return { text: 'Sent undo keystroke.' };
+      },
+    },
+
+    // ── DAEMON DIAGNOSTICS (v0.9 PR7.2) ────────────────────────────
+    // These three tools replace REST endpoints that the dashboard used to
+    // call directly. They're intentionally minimal — clients that want
+    // richer log views should consume task_logs_current instead.
+
+    {
+      name: 'logs_recent',
+      description:
+        'Return the last 200 captured console log entries from the daemon ' +
+        '(level + timestamp + message). Empty array when no log buffer is ' +
+        'attached (e.g. stdio MCP without a running daemon).',
+      parameters: {
+        limit: {
+          type: 'number',
+          description: 'Cap the number of entries returned (default 200)',
+          required: false,
+          minimum: 1,
+          maximum: 500,
+        },
+      },
+      category: 'orchestration',
+      compactGroup: 'system',
+      safetyTier: 0,
+      handler: async ({ limit }, ctx) => {
+        const cap = typeof limit === 'number' ? Math.max(1, Math.min(500, Math.floor(limit))) : 200;
+        if (!ctx.getLogBuffer) return { text: '[]' };
+        const buf = ctx.getLogBuffer();
+        const sliced = buf.length > cap ? buf.slice(buf.length - cap) : buf;
+        return { text: JSON.stringify(sliced) };
+      },
+    },
+
+    {
+      name: 'submit_report',
+      description:
+        'Submit a redacted task-log report to clawdcursor\'s telemetry endpoint. ' +
+        'Opt-in only — never runs unless explicitly invoked. Returns the ' +
+        'server-issued report ID and a preview of the redacted payload, or ' +
+        'an error reason when submission fails.',
+      parameters: {
+        userNote: {
+          type: 'string',
+          description: 'Optional free-text note describing what went wrong',
+          required: false,
+        },
+        logIndex: {
+          type: 'number',
+          description: 'Index into the recent task logs (0 = most recent). Defaults to 0.',
+          required: false,
+          minimum: 0,
+        },
+      },
+      category: 'orchestration',
+      compactGroup: 'system',
+      safetyTier: 2,
+      handler: async ({ userNote, logIndex }) => {
+        try {
+          const { apiSubmitReport } = await import('../surface/report');
+          const result = await apiSubmitReport({
+            userNote: typeof userNote === 'string' ? userNote : undefined,
+            logIndex: typeof logIndex === 'number' ? logIndex : undefined,
+          });
+          if (result.success) {
+            return {
+              text: JSON.stringify({
+                success: true,
+                reportId: result.reportId,
+                preview: result.preview,
+              }),
+            };
+          }
+          return {
+            text: JSON.stringify({
+              success: false,
+              error: result.error,
+              reportId: result.reportId,
+              preview: result.preview,
+            }),
+            isError: true,
+          };
+        } catch (err) {
+          return {
+            text: `submit_report: ${(err as Error).message}`,
+            isError: true,
+          };
+        }
+      },
+    },
+
+    {
+      name: 'learn_app',
+      description:
+        'Persist a newly-learned workflow, shortcut, or tip for an app into ' +
+        'the local guides registry. Supports merging shortcut maps and tip ' +
+        'lists into the existing guide JSON. Use this at the end of a ' +
+        'successful exploration so future runs can short-circuit the same task.',
+      parameters: {
+        processName: {
+          type: 'string',
+          description: 'Process / app name (matches an existing guide JSON file)',
+          required: true,
+        },
+        task: {
+          type: 'string',
+          description: 'Optional task description that was learned',
+          required: false,
+        },
+        actionsJson: {
+          type: 'string',
+          description: 'Optional JSON array of {action, …} steps that achieved the task',
+          required: false,
+        },
+        shortcutsJson: {
+          type: 'string',
+          description: 'Optional JSON object of { name: keystroke } shortcut additions',
+          required: false,
+        },
+        tipsJson: {
+          type: 'string',
+          description: 'Optional JSON array of free-text tips',
+          required: false,
+        },
+      },
+      category: 'orchestration',
+      compactGroup: 'system',
+      safetyTier: 2,
+      handler: async ({ processName, task, actionsJson, shortcutsJson, tipsJson }) => {
+        try {
+          if (!processName || typeof processName !== 'string') {
+            return { text: 'learn_app: processName is required', isError: true };
+          }
+          const parseSafe = (raw: unknown): unknown => {
+            if (typeof raw !== 'string' || !raw.trim()) return undefined;
+            try { return JSON.parse(raw); } catch { return undefined; }
+          };
+          const actions   = parseSafe(actionsJson);
+          const shortcuts = parseSafe(shortcutsJson);
+          const tips      = parseSafe(tipsJson);
+
+          // Writes go through the live loader → user-override dir
+          // (`~/.clawdcursor/ui-knowledge/{app}.json`). The bundled source
+          // tree is never modified. detectApp resolves "EXCEL"/"winword"/etc.
+          // to the canonical app key so writes don't fork the filename space.
+          if (typeof task === 'string' && task && Array.isArray(actions)) {
+            saveLearnedLesson(processName, task, actions);
+          }
+          if (shortcuts || tips) {
+            mergeIntoUserGuide(processName, {
+              shortcuts: shortcuts && typeof shortcuts === 'object'
+                ? shortcuts as Record<string, string>
+                : undefined,
+              tips: Array.isArray(tips) ? tips as string[] : undefined,
+            });
+          }
+
+          return {
+            text: JSON.stringify({
+              saved: true,
+              processName,
+              app: resolveAppKey(processName),
+            }),
+          };
+        } catch (err) {
+          return { text: `learn_app: ${(err as Error).message}`, isError: true };
+        }
       },
     },
   ];

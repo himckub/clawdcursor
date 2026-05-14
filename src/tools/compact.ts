@@ -3,10 +3,10 @@
  * primitive, Anthropic-Computer-Use-style.
  *
  * Why this exists:
- *   An agent driving clawdcursor via MCP otherwise sees 75 granular
+ *   An agent driving clawdcursor via MCP otherwise sees 89 granular
  *   tool schemas (~18,000 tokens of tool catalog). Most models
  *   over-think the choice, pick near-duplicates, and burn context.
- *   This file collapses the 75 tools into 6 action-discriminated
+ *   This file collapses the 89 tools into 6 action-discriminated
  *   compound tools — the same "1 tool with N sub-actions" shape that
  *   Anthropic uses for computer_20250124.
  *
@@ -22,7 +22,7 @@
  * pick which shape to consume.
  *
  * Selection:
- *   `clawdcursor mcp`             → 75 granular tools (back-compat)
+ *   `clawdcursor mcp`             → 89 granular tools (back-compat)
  *   `clawdcursor mcp --compact`   → 6 compound tools (this file)
  *   GET /tools?mode=compact      → REST gets the same compact schemas
  *
@@ -32,7 +32,7 @@
  *   up automatically.
  */
 
-import { getTool } from './index';
+import { getTool } from './registry';
 import type { ToolDefinition, ToolContext, ToolResult } from './types';
 
 // ─── Action → granular-tool delegation table ────────────────────────
@@ -248,6 +248,7 @@ export function getCompactTools(): ToolDefinition[] {
         'Prefer `accessibility` for named targets; use `computer` only when you need pixel-level control.',
       parameters: buildCompoundSchema(COMPUTER_ACTIONS),
       category: 'orchestration',
+      safetyTier: 1,
       handler: (args, ctx) => dispatchCompound('computer', COMPUTER_ACTIONS, args, ctx),
     },
 
@@ -259,6 +260,7 @@ export function getCompactTools(): ToolDefinition[] {
         'Always preferred over `computer.click(x,y)` when the target has a name — more reliable across DPI, window resize, layout shifts.',
       parameters: buildCompoundSchema(ACCESSIBILITY_ACTIONS),
       category: 'perception',
+      safetyTier: 0,
       handler: (args, ctx) => dispatchCompound('accessibility', ACCESSIBILITY_ACTIONS, args, ctx),
     },
 
@@ -269,6 +271,7 @@ export function getCompactTools(): ToolDefinition[] {
         `Pick an action: ${actionCatalog(WINDOW_ACTIONS)}.`,
       parameters: buildCompoundSchema(WINDOW_ACTIONS),
       category: 'window',
+      safetyTier: 1,
       handler: (args, ctx) => dispatchCompound('window', WINDOW_ACTIONS, args, ctx),
     },
 
@@ -279,6 +282,7 @@ export function getCompactTools(): ToolDefinition[] {
         `Pick an action: ${actionCatalog(SYSTEM_ACTIONS)}.`,
       parameters: buildCompoundSchema(SYSTEM_ACTIONS),
       category: 'orchestration',
+      safetyTier: 1,
       handler: (args, ctx) => dispatchCompound('system', SYSTEM_ACTIONS, args, ctx),
     },
 
@@ -289,6 +293,7 @@ export function getCompactTools(): ToolDefinition[] {
         `Pick an action: ${actionCatalog(BROWSER_ACTIONS)}.`,
       parameters: buildCompoundSchema(BROWSER_ACTIONS),
       category: 'browser',
+      safetyTier: 1,
       handler: (args, ctx) => dispatchCompound('browser', BROWSER_ACTIONS, args, ctx),
     },
 
@@ -306,6 +311,7 @@ export function getCompactTools(): ToolDefinition[] {
         },
       },
       category: 'orchestration',
+      safetyTier: 1,
       handler: (args, ctx) => dispatchCompound('task', [
         { action: '__task__', delegate: 'delegate_to_agent', argRemap: { instruction: 'task' } },
       ], { action: '__task__', ...args }, ctx),

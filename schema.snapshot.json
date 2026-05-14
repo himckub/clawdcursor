@@ -182,6 +182,49 @@
       }
     },
     {
+      "name": "abort_task",
+      "description": "Signal the running task to abort. The pipeline checks `isAborted()` between steps; long-running LLM calls may take a few seconds to wind down. agent_status will return `idle` once the abort has settled.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "agent_status",
+      "description": "Return the autonomous agent's current state: status (idle | thinking | acting | waiting_confirm), currentTask, currentStep, stepsCompleted, stepsTotal. Cheap (synchronous read) — safe to poll at 1–2 Hz.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "build_uri",
+      "description": "Build a properly-encoded URI from a scheme + semantic fields. Returns the URI as text; pair with open_uri to dispatch it. Examples: scheme=\"mailto\" + to/subject/body → RFC 6068 mailto URI. scheme=\"tel\" + path=\"+15551234\" → tel:+15551234. scheme=\"slack\" + team/channel → slack URI.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scheme": {
+            "type": "string",
+            "description": "URI scheme without the colon: mailto, tel, sms, webcal, slack, vscode, obsidian, spotify, https, etc."
+          },
+          "path": {
+            "type": "string",
+            "description": "Scheme-specific path (for mailto: the recipient address; for tel:/sms: the number; for https: the host+path). URL-encoded for you."
+          },
+          "query": {
+            "type": "string",
+            "description": "JSON object of query parameters, e.g. {\"subject\":\"hi\",\"body\":\"hello\"}. Each value will be URL-encoded."
+          }
+        },
+        "required": [
+          "scheme"
+        ]
+      }
+    },
+    {
       "name": "cdp_click",
       "description": "Click a DOM element by CSS selector or by visible text content.",
       "category": "browser",
@@ -465,6 +508,49 @@
       }
     },
     {
+      "name": "favorites_add",
+      "description": "Add a task string to the favorites list. No-op if already present. Returns the updated list.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "Task string to star"
+          }
+        },
+        "required": [
+          "task"
+        ]
+      }
+    },
+    {
+      "name": "favorites_list",
+      "description": "Return the list of starred (\"favorite\") task strings. Stored locally at ~/.clawdcursor/.clawdcursor-favorites.json — never sent over the network.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "favorites_remove",
+      "description": "Remove a task string from the favorites list. Returns the updated list.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "Task string to unstar"
+          }
+        },
+        "required": [
+          "task"
+        ]
+      }
+    },
+    {
       "name": "find_element",
       "description": "Search for UI elements by name, control type, or automation ID within a process. Returns matching elements with bounds.",
       "category": "window",
@@ -701,12 +787,61 @@
       }
     },
     {
+      "name": "learn_app",
+      "description": "Persist a newly-learned workflow, shortcut, or tip for an app into the local guides registry. Supports merging shortcut maps and tip lists into the existing guide JSON. Use this at the end of a successful exploration so future runs can short-circuit the same task.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "processName": {
+            "type": "string",
+            "description": "Process / app name (matches an existing guide JSON file)"
+          },
+          "task": {
+            "type": "string",
+            "description": "Optional task description that was learned"
+          },
+          "actionsJson": {
+            "type": "string",
+            "description": "Optional JSON array of {action, …} steps that achieved the task"
+          },
+          "shortcutsJson": {
+            "type": "string",
+            "description": "Optional JSON object of { name: keystroke } shortcut additions"
+          },
+          "tipsJson": {
+            "type": "string",
+            "description": "Optional JSON array of free-text tips"
+          }
+        },
+        "required": [
+          "processName"
+        ]
+      }
+    },
+    {
       "name": "list_displays",
       "description": "Enumerate all connected displays with logical bounds, physical size, DPI ratio, and primary flag. Use this before desktop_screenshot with displayIndex to target a specific monitor.",
       "category": "window",
       "parameters": {
         "type": "object",
         "properties": {}
+      }
+    },
+    {
+      "name": "logs_recent",
+      "description": "Return the last 200 captured console log entries from the daemon (level + timestamp + message). Empty array when no log buffer is attached (e.g. stdio MCP without a running daemon).",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Cap the number of entries returned (default 200)",
+            "minimum": 1,
+            "maximum": 500
+          }
+        }
       }
     },
     {
@@ -1106,7 +1241,7 @@
     },
     {
       "name": "navigate_browser",
-      "description": "Open a URL in the browser. Launches with CDP enabled (port 9223) for DOM interaction. Call cdp_connect after.",
+      "description": "Open a URL in the browser. Launches with CDP enabled (port 9223) for DOM interaction. Call cdp_connect after. Tier 2 (mutation): triggers network egress to an arbitrary destination + spawns/attaches to a browser process.",
       "category": "orchestration",
       "parameters": {
         "type": "object",
@@ -1132,14 +1267,14 @@
     },
     {
       "name": "open_app",
-      "description": "Open an application by name. Uses platform-native launch.",
+      "description": "Open an application by name. Uses the cross-OS app alias table + the PlatformAdapter's launchApp (UWP-aware on Windows, `open -a` on macOS, gtk-launch / xdg-open on Linux).",
       "category": "orchestration",
       "parameters": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string",
-            "description": "Application name (e.g. \"notepad\", \"calc\", \"mspaint\")"
+            "description": "Application name (e.g. \"notepad\", \"calc\", \"mspaint\", \"Outlook\", \"Chrome\")"
           }
         },
         "required": [
@@ -1149,7 +1284,7 @@
     },
     {
       "name": "open_file",
-      "description": "Open a file or folder in the OS default application. Uses `open` (macOS), `xdg-open` (Linux), and explorer / ShellExecute (Windows).",
+      "description": "Open a file or folder in the OS default application. Uses `open` (macOS), `xdg-open` (Linux), and explorer / ShellExecute (Windows). Tier 2 (mutation): on some platforms \"opening\" a file may execute it (.exe on Windows, .app on macOS, scripts with executable bit on Linux), and the registered handler can be privileged or destructive.",
       "category": "orchestration",
       "parameters": {
         "type": "object",
@@ -1165,8 +1300,25 @@
       }
     },
     {
+      "name": "open_uri",
+      "description": "Open ANY registered URI (mailto:, tel:, sms:, webcal:, file:, slack:, vscode:, obsidian:, spotify:, zoommtg:, https:, custom-scheme:, ...) via the OS protocol-handler registry. The OS routes to whichever app the user has registered as the handler. Replaces dozens of app-specific shortcuts with one general primitive. For mailto:, use the convenience helper compose_uri_mailto, or pass a full pre-built URI. Tier 2 (mutation): the OS will dispatch to whatever app is registered for the scheme — that handler may be privileged or destructive (file: opens files which on Windows can execute .exe; vscode: opens a workspace; zoommtg: joins a call). The dispatcher does no scheme allowlist — callers + the agent loop are responsible for not constructing dangerous URIs.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uri": {
+            "type": "string",
+            "description": "A full URI like \"mailto:bob@example.com?subject=hi&body=hello\", \"tel:+15551234\", \"slack://channel?team=T123&id=C456\", \"vscode://file/Users/me/code/x.ts\", \"https://example.com\". Must be properly URL-encoded."
+          }
+        },
+        "required": [
+          "uri"
+        ]
+      }
+    },
+    {
       "name": "open_url",
-      "description": "Open a URL in the OS default browser. Non-browser-agnostic counterpart to navigate_browser.",
+      "description": "Open a URL in the OS default browser. Non-browser-agnostic counterpart to navigate_browser. Tier 2 (mutation): triggers network egress to an arbitrary destination and may launch the registered HTTP handler (which can be any app, not strictly a browser).",
       "category": "orchestration",
       "parameters": {
         "type": "object",
@@ -1284,6 +1436,15 @@
             "description": "Optional title-substring match"
           }
         }
+      }
+    },
+    {
+      "name": "screenshot_full",
+      "description": "Capture the full primary display and return it as a base64-encoded PNG. Equivalent to desktop_screenshot but returns the full frame unconditionally (no region cropping). Useful for the dashboard's /screenshot REST replacement.",
+      "category": "perception",
+      "parameters": {
+        "type": "object",
+        "properties": {}
       }
     },
     {
@@ -1443,6 +1604,42 @@
       }
     },
     {
+      "name": "submit_report",
+      "description": "Submit a redacted task-log report to clawdcursor's telemetry endpoint. Opt-in only — never runs unless explicitly invoked. Returns the server-issued report ID and a preview of the redacted payload, or an error reason when submission fails.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userNote": {
+            "type": "string",
+            "description": "Optional free-text note describing what went wrong"
+          },
+          "logIndex": {
+            "type": "number",
+            "description": "Index into the recent task logs (0 = most recent). Defaults to 0.",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "submit_task",
+      "description": "Submit a natural-language task to the autonomous agent. The agent classifies, decomposes, and executes the task through the unified pipeline (a11y → text-agent → vision fallback). Returns immediately with `accepted: true`; poll agent_status to track progress.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "Natural-language task"
+          }
+        },
+        "required": [
+          "task"
+        ]
+      }
+    },
+    {
       "name": "switch_tab_os",
       "description": "Cycle or jump to a browser tab using the OS-agnostic keyboard shortcut (mod+Tab / mod+Shift+Tab / mod+{1..9}). Works in Chrome, Firefox, Edge, Safari. For in-browser DOM-level control use cdp_switch_tab.",
       "category": "window",
@@ -1467,8 +1664,26 @@
       }
     },
     {
+      "name": "task_logs_current",
+      "description": "Return the structured log entries for the currently-executing task (or the most recent if no task is running). Each entry is a JSONL event from the pipeline trace.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "task_logs_list",
+      "description": "List the last 50 task summaries from the daemon's structured log. Each summary contains task text, correlation ID, start/end timestamps, and final status. Returns [] when no logger is attached.",
+      "category": "orchestration",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
       "name": "type_text",
-      "description": "Type text into the currently focused element via clipboard paste (reliable, no dropped chars).",
+      "description": "Type text into the currently focused element. Internally uses clipboard paste for reliability (no dropped chars). The user clipboard is saved before and restored after, so calling type_text never clobbers any text the caller had previously placed on the clipboard.",
       "category": "keyboard",
       "parameters": {
         "type": "object",
@@ -1545,7 +1760,7 @@
     },
     {
       "name": "write_clipboard",
-      "description": "Write text to the OS clipboard.",
+      "description": "Write text to the OS clipboard. Tier 2 (mutation): overwrites the user's clipboard, which can hijack subsequent copy/paste flows. Reversibility is via a fresh user-initiated copy, not by the agent.",
       "category": "clipboard",
       "parameters": {
         "type": "object",

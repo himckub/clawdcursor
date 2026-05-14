@@ -4,10 +4,10 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { APP_ALIASES, resolveAlias } from '../pipeline/router/aliases';
-import { needsWebView2Settle, WEBVIEW2_SETTLE_MS } from '../pipeline/router/webview2';
-import { Router } from '../pipeline/router/router';
-import type { PlatformAdapter, WindowInfo } from '../v2/platform/types';
+import { APP_ALIASES, resolveAlias } from '../core/router/aliases';
+import { needsWebView2Settle, WEBVIEW2_SETTLE_MS } from '../core/router/webview2';
+import { Router } from '../core/router/router';
+import type { PlatformAdapter, WindowInfo } from '../platform/types';
 
 /**
  * Stateful mock adapter. launchApp toggles `afterLaunchWindows` on, so
@@ -210,13 +210,78 @@ describe('Router.route — URL nav with verification', () => {
     expect(adapter.launchApp.mock.calls[0][1].url).toBe('https://clawdcursor.com');
   });
 
-  it('refuses success when URL launch produces no browser window', async () => {
+  it('trusts launchApp success even when no browser window surfaces (verifier-as-ground-truth)', async () => {
+    // v0.8.17 changed URL-nav from "poll-for-new-window-or-fail" to
+    // "trust the OS launch, let the pipeline's verifier check ground
+    // truth." The previous logic timed out at 8s every time the user's
+    // browser reused an existing tab (no new window appeared) and
+    // forced the pipeline to escalate unnecessarily.
     const adapter = makeStatefulAdapter({ postLaunchWindows: [] });
     const r = new Router(adapter);
     const res = await r.route('visit https://clawdcursor.com');
-    expect(res.handled).toBe(false);
-    expect(r.telemetry.launchUnverified).toBeGreaterThan(0);
-  }, 20_000);
+    expect(res.handled).toBe(true);
+    expect(res.path).toBe('url_nav');
+    // launchApp was invoked exactly once with the right URL — that's
+    // the contract; whether a window surfaces is the verifier's call.
+    expect(adapter.launchApp.mock.calls[0][1].url).toBe('https://clawdcursor.com');
+  });
+});
+
+describe('Router.route — web-service redirect (v0.9.0 fix)', () => {
+  // Closes the "agent typed 'default browser' into a search bar" bug.
+  // "open <web-service>" misses APP_ALIASES → would fall through Start-Menu
+  // search → blind-agent escalation. The web-service table catches it first
+  // and routes to handleUrlNav so the OS opens the registered http handler.
+
+  it('"open youtube" redirects to https://www.youtube.com via url_nav', async () => {
+    const adapter = makeStatefulAdapter({ postLaunchWindows: [] });
+    const r = new Router(adapter);
+    const res = await r.route('open youtube');
+    expect(res.handled).toBe(true);
+    expect(res.path).toBe('url_nav');
+    expect(adapter.launchApp).toHaveBeenCalledWith(
+      'default-browser',
+      expect.objectContaining({ url: 'https://www.youtube.com' }),
+    );
+    expect(r.telemetry.webServiceRedirects).toBe(1);
+  });
+
+  it('"open reddit" routes to reddit.com', async () => {
+    const adapter = makeStatefulAdapter({ postLaunchWindows: [] });
+    const r = new Router(adapter);
+    await r.route('open reddit');
+    expect(adapter.launchApp.mock.calls[0][1].url).toBe('https://www.reddit.com');
+  });
+
+  it('"open gmail" routes to mail.google.com (no desktop Gmail client)', async () => {
+    const adapter = makeStatefulAdapter({ postLaunchWindows: [] });
+    const r = new Router(adapter);
+    await r.route('open gmail');
+    expect(adapter.launchApp.mock.calls[0][1].url).toBe('https://mail.google.com');
+  });
+
+  it('"open chrome" still goes through the desktop alias (NOT the web table)', async () => {
+    // chrome has an APP_ALIASES entry, so the desktop client wins. Verifies
+    // we didn't accidentally shadow native apps.
+    const chrome = mkWindow({ processName: 'chrome', title: 'Chrome', processId: 99 });
+    const adapter = makeStatefulAdapter({ postLaunchWindows: [chrome] });
+    const r = new Router(adapter);
+    await r.route('open chrome');
+    expect(r.telemetry.webServiceRedirects).toBe(0);
+    // launchApp called with the alias's launch args, not 'default-browser'
+    expect(adapter.launchApp.mock.calls[0][0]).not.toBe('default-browser');
+  });
+
+  it('"open the youtube app" — filler-suffix stripped, still redirects', async () => {
+    // normalizeAppName turns "the youtube app" into "youtube". Verifies the
+    // web-service resolver runs through the same normalization as alias
+    // resolution so phrasings line up.
+    const adapter = makeStatefulAdapter({ postLaunchWindows: [] });
+    const r = new Router(adapter);
+    const res = await r.route('open the youtube app');
+    expect(res.path).toBe('url_nav');
+    expect(adapter.launchApp.mock.calls[0][1].url).toBe('https://www.youtube.com');
+  });
 });
 
 describe('Router.route — misc paths', () => {

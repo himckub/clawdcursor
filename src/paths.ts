@@ -29,6 +29,37 @@ export const FAVORITES_PATH = path.join(DATA_DIR, '.clawdcursor-favorites.json')
 export const TOKEN_PATH = path.join(DATA_DIR, 'token');
 
 /**
+ * Find the package root (directory containing package.json) by walking up
+ * from the caller's `__dirname`. Cached after first call.
+ *
+ * Why: pre-v0.9 every source file lived directly under `src/` so compiled
+ * output landed at `dist/<file>.js` and `__dirname/..` always pointed at the
+ * package root. After v0.9 PR10's directory restructure, files now live at
+ * `dist/<core|tools|platform|llm|surface>/<file>.js`, so `__dirname/..` is
+ * one level too shallow. This helper walks up until it finds package.json
+ * regardless of how deeply nested the calling file is — so any future moves
+ * don't break path resolution again.
+ */
+let cachedPackageRoot: string | null = null;
+export function getPackageRoot(): string {
+  if (cachedPackageRoot) return cachedPackageRoot;
+  let dir = __dirname;
+  // Walk up at most 8 levels — package roots are never that deep.
+  for (let i = 0; i < 8; i++) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) {
+      cachedPackageRoot = dir;
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break; // hit filesystem root
+    dir = parent;
+  }
+  // Fallback: assume we're in dist/<subdir>/ and go up two levels.
+  cachedPackageRoot = path.resolve(__dirname, '..', '..');
+  return cachedPackageRoot;
+}
+
+/**
  * Migrate data from legacy directories to ~/.clawdcursor/.
  * Checks both ~/.openclaw/clawd-cursor/ (v0.5.x) and ~/.clawd-cursor/ (v0.6–v0.7 pre-rename).
  * Only runs once — if the new dir already has content, skips.

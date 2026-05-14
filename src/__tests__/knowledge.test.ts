@@ -1,14 +1,45 @@
 /**
  * Knowledge-loader tests: domain detection + bundled guides + user override +
  * workflow → prompt fragment synthesis.
+ *
+ * The Phase 3 marketplace work moved most curated guides out of the bundled
+ * `src/llm/knowledge/guides/` directory and into `seed-registry/guides/` —
+ * those are the source files for the GitHub clawdcursor-guides repo. The
+ * binary now ships only msedge + notepad as bundled core; the rest are
+ * fetched from the remote registry at runtime.
+ *
+ * Tests still want to assert on the curated guides without going over the
+ * network, so we point `CLAWD_BUNDLED_GUIDES_DIR` at the seed-registry copy
+ * for the duration of the suite. The loader reads that env var at every
+ * `bundledGuidesDir()` call.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { detectApp } from '../pipeline/knowledge/domain-map';
-import { loadGuide, clearCache, getWorkflowForTask } from '../pipeline/knowledge/loader';
+import { detectApp } from '../llm/knowledge/domain-map';
+import {
+  loadGuide, clearCache, getWorkflowForTask,
+  saveLearnedLesson, mergeIntoUserGuide, resolveAppKey,
+} from '../llm/knowledge/loader';
+
+const SEED_REGISTRY_GUIDES = path.resolve(__dirname, '../../seed-registry/guides');
+
+/**
+ * Helper for describes that exercise guides moved to seed-registry/ (gmail,
+ * outlook, slack, youtube, …). Other describes — notably the write-path
+ * tests — need the real bundled dir where notepad.json still lives, so
+ * they should NOT call this.
+ */
+function useSeedRegistryAsBundle() {
+  const orig = process.env.CLAWD_BUNDLED_GUIDES_DIR;
+  beforeAll(() => { process.env.CLAWD_BUNDLED_GUIDES_DIR = SEED_REGISTRY_GUIDES; });
+  afterAll(() => {
+    if (orig === undefined) delete process.env.CLAWD_BUNDLED_GUIDES_DIR;
+    else process.env.CLAWD_BUNDLED_GUIDES_DIR = orig;
+  });
+}
 
 describe('detectApp', () => {
   it.each([
@@ -34,6 +65,7 @@ describe('detectApp', () => {
 });
 
 describe('loadGuide — bundled guides', () => {
+  useSeedRegistryAsBundle();
   beforeEach(() => clearCache());
 
   it('loads gmail.json from the bundle', () => {
@@ -68,6 +100,7 @@ describe('loadGuide — bundled guides', () => {
 });
 
 describe('loadGuide — user override takes precedence', () => {
+  useSeedRegistryAsBundle();
   let tmpHome: string;
   const origClawdHome = process.env.CLAWD_HOME;
 
@@ -99,16 +132,109 @@ describe('loadGuide — user override takes precedence', () => {
   });
 });
 
+describe('learn_app write path (saveLearnedLesson + mergeIntoUserGuide)', () => {
+  let tmpHome: string;
+  const origClawdHome = process.env.CLAWD_HOME;
+
+  beforeEach(() => {
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-knowledge-write-test-'));
+    process.env.CLAWD_HOME = tmpHome;
+    clearCache();
+  });
+
+  afterEach(() => {
+    if (origClawdHome === undefined) delete process.env.CLAWD_HOME;
+    else process.env.CLAWD_HOME = origClawdHome;
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+    clearCache();
+  });
+
+  it('resolveAppKey maps process names to canonical app keys', () => {
+    expect(resolveAppKey('Notepad')).toBe('notepad');
+    expect(resolveAppKey('EXCEL')).toBe('excel');
+    expect(resolveAppKey('mail.google.com')).toBe('gmail');
+    expect(resolveAppKey('SomeRandomApp_v3')).toBe('somerandomapp_v3');
+  });
+
+  it('saveLearnedLesson writes to user-override dir, not the bundle', () => {
+    saveLearnedLesson('Notepad', 'create haiku poem', [
+      { action: 'key',   description: 'press: Ctrl+N' },
+      { action: 'type',  description: 'type haiku text' },
+      { action: 'key',   description: 'press: Ctrl+S' },
+      { action: 'done',  description: 'finished' },
+    ]);
+
+    const overridePath = path.join(tmpHome, '.clawdcursor', 'ui-knowledge', 'notepad.json');
+    expect(fs.existsSync(overridePath)).toBe(true);
+    const written = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
+    expect(written.learnedWorkflows.create_haiku_poem).toMatch(/Press Ctrl\+N/);
+    expect(written.learnedWorkflows.create_haiku_poem).not.toMatch(/finished/); // 'done' filtered
+    // Seeded from bundled — preserves curated shortcuts.
+    expect(written.shortcuts.save).toBe('Ctrl+S');
+  });
+
+  it('mergeIntoUserGuide merges shortcuts + dedupes tips', () => {
+    const app = mergeIntoUserGuide('Notepad', {
+      shortcuts: { word_count: 'Ctrl+Shift+W' },
+      tips: ['Save before exit', 'Save before exit'], // duplicate
+    });
+    expect(app).toBe('notepad');
+
+    const overridePath = path.join(tmpHome, '.clawdcursor', 'ui-knowledge', 'notepad.json');
+    const written = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
+    expect(written.shortcuts.word_count).toBe('Ctrl+Shift+W');
+    expect(written.shortcuts.save).toBe('Ctrl+S'); // bundled preserved
+    expect(written.tips.filter((t: string) => t === 'Save before exit')).toHaveLength(1);
+  });
+
+  it('saveLearnedLesson caps at 20 entries FIFO', () => {
+    for (let i = 0; i < 25; i++) {
+      saveLearnedLesson('Notepad', `task number ${i}`, [
+        { action: 'type', description: 'typing' },
+      ]);
+    }
+    const overridePath = path.join(tmpHome, '.clawdcursor', 'ui-knowledge', 'notepad.json');
+    const written = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
+    const keys = Object.keys(written.learnedWorkflows);
+    expect(keys.length).toBe(20);
+    expect(keys).not.toContain('task_number_0'); // oldest evicted
+    expect(keys).toContain('task_number_24');    // newest kept
+  });
+
+  it('saveLearnedLesson ignores empty / done-only action logs', () => {
+    saveLearnedLesson('Notepad', 'no-op task', [
+      { action: 'done', description: 'finished' },
+    ]);
+    const overridePath = path.join(tmpHome, '.clawdcursor', 'ui-knowledge', 'notepad.json');
+    expect(fs.existsSync(overridePath)).toBe(false);
+  });
+
+  it('subsequent loadGuide picks up learned workflows after write', () => {
+    saveLearnedLesson('Notepad', 'find and replace text', [
+      { action: 'key', description: 'press: Ctrl+H' },
+      { action: 'type', description: 'replacement text' },
+    ]);
+    const g = loadGuide('notepad') as any;
+    expect(g.learnedWorkflows.find_and_replace_text).toMatch(/Ctrl\+H/);
+  });
+});
+
 describe('getWorkflowForTask', () => {
-  it('matches "send email" to compose_and_send in Gmail', () => {
+  useSeedRegistryAsBundle();
+
+  it('matches "send email" to compose_and_send in Gmail (★-highlighted)', () => {
     const r = getWorkflowForTask(
       'send email to bob@acme.com about lunch',
       'https://mail.google.com/mail',
     );
     expect(r).not.toBeNull();
     expect(r!.guide.app).toBe('gmail');
-    expect(r!.workflow.name).toMatch(/compose/i);
-    expect(r!.promptFragment).toContain('APP KNOWLEDGE — GMAIL:');
+    expect(r!.workflow).not.toBeNull();
+    // Gmail's compose_and_send is a structured AppWorkflow.
+    const wf = r!.workflow as { name: string };
+    expect(wf.name).toMatch(/compose/i);
+    expect(r!.promptFragment).toContain('APP KNOWLEDGE — GMAIL');
+    expect(r!.promptFragment).toContain('★ compose_and_send'); // marked as the active workflow
     expect(r!.promptFragment).toContain('pressKey c');
   });
 
@@ -117,10 +243,19 @@ describe('getWorkflowForTask', () => {
     expect(r).not.toBeNull();
     expect(r!.guide.app).toBe('outlook');
     expect(r!.promptFragment).toContain('mod+r');
+    expect(r!.promptFragment).toContain('★ reply');
   });
 
-  it('returns null when the task has no matching workflow', () => {
-    expect(getWorkflowForTask('schedule a meeting tomorrow', 'mail.google.com')).toBeNull();
+  it('still returns the guide when no keyword matches (richer-by-default)', () => {
+    // The legacy behavior was to return null on no keyword match, silently
+    // suppressing all app context. v0.9: return the full guide with no
+    // ★ marker. The agent gets context; the matcher just couldn't pick
+    // a single workflow.
+    const r = getWorkflowForTask('schedule a meeting tomorrow', 'mail.google.com');
+    expect(r).not.toBeNull();
+    expect(r!.workflow).toBeNull();
+    expect(r!.promptFragment).toContain('APP KNOWLEDGE — GMAIL');
+    expect(r!.promptFragment).not.toContain('★ '); // no workflow promoted
   });
 
   it('returns null when no app is detected', () => {
@@ -130,5 +265,20 @@ describe('getWorkflowForTask', () => {
   it('prompt fragment ends with a prefer-keyboard nudge', () => {
     const r = getWorkflowForTask('search for invoice', 'mail.google.com')!;
     expect(r.promptFragment).toContain('Prefer keyboard over mouse');
+  });
+
+  it('matches "play" on youtube.com → search_and_play workflow', () => {
+    const r = getWorkflowForTask(
+      'play a song by adele',
+      'https://www.youtube.com',
+    );
+    expect(r).not.toBeNull();
+    expect(r!.guide.app).toBe('youtube');
+    expect(r!.promptFragment).toContain('APP KNOWLEDGE — YOUTUBE');
+    expect(r!.promptFragment).toContain('★ search_and_play');
+    // Layout and tips are surfaced too — guide is rich, not a script.
+    expect(r!.promptFragment).toMatch(/LAYOUT:/);
+    expect(r!.promptFragment).toMatch(/SHORTCUTS:/);
+    expect(r!.promptFragment).toMatch(/TIPS:/);
   });
 });

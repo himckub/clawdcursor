@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Clawd Cursor v0.8.8</title>
-  <meta name="description" content="Clawd Cursor v0.8.8 — one skill replaces a dozen APIs. Give your agent native desktop control: Gmail, Slack, Jira, Figma — if you can click it, your agent can too.">
-  <meta property="og:title" content="Clawd Cursor v0.8.8">
-  <meta property="og:description" content="One skill replaces a dozen APIs. Native desktop control for any tool-calling AI. Windows, macOS, Linux.">
+  <title>Clawd Cursor v0.9.0 — eyes, hands, and a keyboard for any AI agent</title>
+  <meta name="description" content="Clawd Cursor v0.9.0 — give any tool-calling AI a real desktop. 89 MCP tools or 6 compact compounds, MCP stdio + HTTP, Windows + macOS + Linux. Community guide marketplace at clawdcursor.com/app-guides.">
+  <meta property="og:title" content="Clawd Cursor v0.9.0">
+  <meta property="og:description" content="Eyes, hands, and a keyboard for any AI agent on a real desktop. Any model. Any app. One MCP entry. Local-only. v0.9: MCP-only protocol, Reflector feedback, guides marketplace.">
 
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://clawdcursor.com/">
@@ -15,17 +15,56 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
   <!--
-    AGENT-READABLE SUMMARY
-    clawdcursor v0.8.8: a skill that gives any AI agent control of a real desktop.
+    AGENT-READABLE SUMMARY (v0.9.0)
+    clawdcursor: a skill that gives any AI agent control of a real desktop.
 
-    Install (Windows):  powershell -c "irm https://clawdcursor.com/install.ps1 | iex"
-    Install (macOS/Linux): curl -fsSL https://clawdcursor.com/install.sh | bash
+    ── INSTALL ─────────────────────────────────────────────────────────────────
+    Windows (PowerShell):  powershell -c "irm https://clawdcursor.com/install.ps1 | iex"
+    macOS / Linux:         curl -fsSL https://clawdcursor.com/install.sh | bash
 
-    Connect via MCP (recommended): clawdcursor mcp --compact → 6 compound tools.
-    Connect via REST: clawdcursor serve → 75 granular tools on localhost:3847.
+    After install, run in this order:
+      clawdcursor consent --accept   # one-time desktop-control authorization (required)
+      clawdcursor doctor             # verify permissions + optionally configure an LLM
+      clawdcursor mcp                # OR clawdcursor agent — see "PICK A MODE"
 
-    Cross-platform: Windows, macOS, Linux (X11 + Wayland).
-    Model-agnostic: any LLM with tool calling.
+    ── PICK A MODE ─────────────────────────────────────────────────────────────
+    `clawdcursor mcp`   — stdio MCP server. Use when AI lives in your editor
+                          (Claude Code, Cursor, Windsurf, Zed). Editor spawns it
+                          on demand. Add this JSON to the editor's MCP config:
+                            { "mcpServers": { "clawdcursor":
+                              { "command": "clawdcursor", "args": ["mcp", "--compact"] } } }
+
+    `clawdcursor agent` — HTTP MCP daemon on 127.0.0.1:3847/mcp. Use when
+                          clawdcursor brings its own LLM brain (configured via
+                          doctor) for unattended/scheduled autonomous runs.
+
+    `clawdcursor agent --no-llm` — same daemon, tool surface only (no built-in
+                          brain). Use when your agent has its own brain and
+                          just wants HTTP tools.
+
+    ── TOOL SURFACE ────────────────────────────────────────────────────────────
+    Compact (default-recommended): 6 compound tools (computer, accessibility,
+    window, system, browser, task) — ~1500 tokens of catalog.
+    Granular: 89 individual tools — one schema per primitive (back-compat).
+
+    ── GUIDES MARKETPLACE ──────────────────────────────────────────────────────
+    Public registry at https://clawdcursor.com/app-guides — community-curated
+    keyboard shortcuts + workflows for popular apps (gmail, outlook, slack,
+    youtube, figma, discord, excel, mspaint, olk, spotify). PR-based
+    submissions at github.com/AmrDab/clawdcursor-guides. Fetched on demand,
+    cached locally. Manage with `clawdcursor guides list / install / submit`.
+
+    ── PLATFORMS ───────────────────────────────────────────────────────────────
+    Windows 10/11 (x64 + ARM64), macOS 12+ (Intel + Apple Silicon),
+    Linux X11, Linux Wayland.
+
+    ── MODEL ───────────────────────────────────────────────────────────────────
+    Any LLM with tool calling. Claude, GPT, Gemini, Llama, Kimi, Ollama, …
+    13 providers configured out of the box.
+
+    Source:  https://github.com/AmrDab/clawdcursor
+    Docs:    https://github.com/AmrDab/clawdcursor/tree/main/docs
+    License: MIT
   -->
 
   <style>
@@ -307,9 +346,9 @@
 
   <!-- Hero -->
   <div class="hero">
-    <div class="hero-badge"><div class="pulse"></div> v0.8.8 — latest stable</div>
-    <h1>One skill replaces<br><span class="gr">a dozen APIs</span></h1>
-    <p>Give your agent a screen. Gmail, Slack, Jira, Figma — if you can click it, your agent can too. Native desktop control. No servers. No API keys per service.</p>
+    <div class="hero-badge"><div class="pulse"></div> v0.9.0 — latest stable</div>
+    <h1>Eyes, hands, and a keyboard<br><span class="gr">for any AI agent</span></h1>
+    <p>Any model. Any app. One MCP entry. Local-only. v0.9: MCP-only protocol, Reflector feedback, a public guides marketplace, 89 tools or 6 compact compounds.</p>
     <div class="hero-btns">
       <a href="https://github.com/AmrDab/clawdcursor" class="btn-p" id="star-btn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
@@ -325,8 +364,8 @@
 
   <!-- Stats -->
   <div class="stats">
-    <div class="stat"><div class="stat-val">75</div><div class="stat-lbl">Granular Tools</div></div>
-    <div class="stat"><div class="stat-val">6</div><div class="stat-lbl">Compact Tools</div></div>
+    <div class="stat"><div class="stat-val">89</div><div class="stat-lbl">Granular Tools</div></div>
+    <div class="stat"><div class="stat-val">6</div><div class="stat-lbl">Compact Compounds</div></div>
     <div class="stat"><div class="stat-val">3</div><div class="stat-lbl">Operating Systems</div></div>
   </div>
 
@@ -340,7 +379,7 @@
         <p>Plain English in, actions out.</p>
         <div class="tag-row">
           <span class="tag g">clawdcursor doctor</span>
-          <span class="tag g">clawdcursor start</span>
+          <span class="tag g">clawdcursor agent</span>
         </div>
       </div>
       <div class="who-card agent">
@@ -359,43 +398,49 @@
 
   <!-- Three modes -->
   <section class="sect" id="modes">
-    <div class="sect-label">Setup</div>
-    <h2>Pick a transport.</h2>
-    <p class="sub">Same tools underneath.</p>
+    <div class="sect-label">Pick a mode</div>
+    <h2>How will your AI talk to it?</h2>
+    <p class="sub">Same tools, three entry shapes. Pick once during install.</p>
     <div class="modes-grid">
       <div class="mode-card b">
-        <h3>MCP (Claude Code / Cursor / Windsurf / OpenClaw)</h3>
-        <ol>
-          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor consent</code></li>
-          <li>Add JSON block to your AI client's config</li>
-          <li>Desktop tools appear natively</li>
-        </ol>
+        <h3>clawdcursor mcp <span style="font-size:0.7rem;font-weight:500;color:var(--accent2);letter-spacing:0.04em;">— recommended</span></h3>
+        <p style="margin:8px 0 12px;color:var(--text2);font-size:0.85rem;line-height:1.5;">AI lives in your editor (Claude Code, Cursor, Windsurf, Zed). Editor spawns clawdcursor on demand over stdio. No daemon, no port.</p>
+        <pre style="background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:0.72rem;color:var(--accent2);overflow-x:auto;margin-bottom:12px;"><code>{
+  "mcpServers": {
+    "clawdcursor": {
+      "command": "clawdcursor",
+      "args": ["mcp", "--compact"]
+    }
+  }
+}</code></pre>
         <div class="mode-stats">
-          <div><div class="mode-stat-val">6 / 75</div><div class="mode-stat-lbl">Compact / Granular</div></div>
-          <div><div class="mode-stat-val">$0</div><div class="mode-stat-lbl">Extra cost</div></div>
-        </div>
-      </div>
-      <div class="mode-card c">
-        <h3>CLI <span style="font-size:0.7rem;font-weight:500;color:var(--text3);letter-spacing:0.04em;">— testing only</span></h3>
-        <ol>
-          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor doctor</code></li>
-          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor start</code></li>
-          <li>Type tasks in plain English</li>
-        </ol>
-        <div class="mode-stats">
-          <div><div class="mode-stat-val">13+</div><div class="mode-stat-lbl">Providers</div></div>
-          <div><div class="mode-stat-val">$0</div><div class="mode-stat-lbl">Smoke-test runs</div></div>
+          <div><div class="mode-stat-val">6 / 89</div><div class="mode-stat-lbl">Compact / Granular</div></div>
+          <div><div class="mode-stat-val">stdio</div><div class="mode-stat-lbl">Transport</div></div>
         </div>
       </div>
       <div class="mode-card a">
-        <h3>REST API</h3>
+        <h3>clawdcursor agent <span style="font-size:0.7rem;font-weight:500;color:var(--text3);letter-spacing:0.04em;">— autonomous daemon</span></h3>
+        <p style="margin:8px 0 12px;color:var(--text2);font-size:0.85rem;line-height:1.5;">clawdcursor brings its own LLM brain (configured via <code style="font-size:0.85em">doctor</code>). For unattended runs, scheduled tasks, multi-process orchestration.</p>
         <ol>
-          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor serve</code></li>
-          <li>75 tools on localhost:3847<br><span style="font-size:0.82em;color:var(--text2)">or 6 via <code>?mode=compact</code></span></li>
-          <li>OpenAI function-calling format</li>
+          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor doctor</code> &middot; pick a provider</li>
+          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor agent</code></li>
+          <li>POST tasks to <code style="font-size:0.82em">127.0.0.1:3847/mcp</code></li>
         </ol>
         <div class="mode-stats">
-          <div><div class="mode-stat-val">:3847</div><div class="mode-stat-lbl">Localhost</div></div>
+          <div><div class="mode-stat-val">:3847</div><div class="mode-stat-lbl">HTTP MCP</div></div>
+          <div><div class="mode-stat-val">13+</div><div class="mode-stat-lbl">Providers</div></div>
+        </div>
+      </div>
+      <div class="mode-card c">
+        <h3>clawdcursor agent --no-llm <span style="font-size:0.7rem;font-weight:500;color:var(--text3);letter-spacing:0.04em;">— BYO brain</span></h3>
+        <p style="margin:8px 0 12px;color:var(--text2);font-size:0.85rem;line-height:1.5;">Your agent already has a brain — you just want HTTP tools. Same daemon, no built-in pipeline.</p>
+        <ol>
+          <li>Run <code style="font-size:0.75rem;color:var(--accent2)">clawdcursor agent --no-llm</code></li>
+          <li>89 tools on <code style="font-size:0.82em">:3847/mcp</code></li>
+          <li>Stateless — no session init needed</li>
+        </ol>
+        <div class="mode-stats">
+          <div><div class="mode-stat-val">89</div><div class="mode-stat-lbl">Granular tools</div></div>
           <div><div class="mode-stat-val">any</div><div class="mode-stat-lbl">HTTP client</div></div>
         </div>
       </div>
@@ -474,9 +519,97 @@
       </div>
       <div class="feat-card">
         <div class="feat-icon">📖</div>
-        <h4>App guides</h4>
-        <p>Optional community JSON guides for the autonomous-agent mode.</p>
+        <h4>Guides marketplace</h4>
+        <p>Community shortcuts &amp; workflows for popular apps. Fetched on demand. <a href="https://github.com/AmrDab/clawdcursor-guides" style="color:var(--accent2)">Contribute via PR →</a></p>
       </div>
+    </div>
+  </section>
+
+  <!-- Guides Marketplace -->
+  <section class="sect" id="guides">
+    <div class="sect-label">Guides Marketplace</div>
+    <h2>Community knowledge for popular apps.</h2>
+    <p class="sub">The agent reasons from scratch on unfamiliar apps. For popular ones, fetch the shortcuts.</p>
+
+    <div class="feat-grid" style="grid-template-columns: repeat(3, 1fr);">
+      <div class="feat-card">
+        <div class="feat-icon">⚡</div>
+        <h4>5–10× faster on known apps</h4>
+        <p>Guides ship keyboard shortcuts, workflow patterns, layout cues, and failure modes. The agent skips the discovery loop.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">🌐</div>
+        <h4>Fetched on demand</h4>
+        <p>Cached locally for 7 days, LRU at 50 entries. Agent never blocks on the network — offline falls back to first-principles reasoning.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">🛡️</div>
+        <h4>Linter every load</h4>
+        <p>Schema check + prompt-injection patterns + dangerous-prose detection on every guide before injection. Defense-in-depth.</p>
+      </div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;margin-top:32px;">
+      <h4 style="margin-bottom:12px;font-size:0.95rem;letter-spacing:-0.01em;">10 verified guides at launch</h4>
+      <p style="color:var(--text2);font-size:0.85rem;margin-bottom:16px;">
+        <code style="font-size:0.85em">discord</code> &middot;
+        <code style="font-size:0.85em">excel</code> &middot;
+        <code style="font-size:0.85em">figma</code> &middot;
+        <code style="font-size:0.85em">gmail</code> &middot;
+        <code style="font-size:0.85em">mspaint</code> &middot;
+        <code style="font-size:0.85em">olk</code> (new Outlook) &middot;
+        <code style="font-size:0.85em">outlook</code> &middot;
+        <code style="font-size:0.85em">slack</code> &middot;
+        <code style="font-size:0.85em">spotify</code> &middot;
+        <code style="font-size:0.85em">youtube</code> (19 workflows, 36 shortcuts, 13 tips)
+      </p>
+      <pre style="background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:0.78rem;color:var(--accent2);overflow-x:auto;"><code><span style="color:var(--text2)"># browse + manage cache</span>
+clawdcursor guides available
+clawdcursor guides install youtube
+clawdcursor guides list
+
+<span style="color:var(--text2)"># submit your own</span>
+clawdcursor guides lint my-app.json
+clawdcursor guides submit my-app.json</code></pre>
+      <p style="color:var(--text3);font-size:0.78rem;margin-top:12px;">
+        Source: <a href="https://github.com/AmrDab/clawdcursor-guides" style="color:var(--accent2)">github.com/AmrDab/clawdcursor-guides</a>
+        &middot; Served at <a href="/app-guides" style="color:var(--accent2)">clawdcursor.com/app-guides</a>
+        &middot; PRs via GitHub &middot; Ratings via 👍/👎 on <code style="font-size:0.85em">vote: &lt;app&gt;</code> issues
+      </p>
+    </div>
+  </section>
+
+  <!-- CLI reference -->
+  <section class="sect" id="cli">
+    <div class="sect-label">CLI</div>
+    <h2>Every command.</h2>
+    <p class="sub">The CLI is for humans diagnosing an install or managing the guide cache. Agents connect via MCP.</p>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;">
+      <pre style="background:transparent;font-size:0.82rem;line-height:1.55;color:var(--text);overflow-x:auto;"><code><span style="color:var(--text3)"># Install &amp; setup</span>
+clawdcursor consent          <span style="color:var(--text3)"># one-time desktop-control authorization</span>
+clawdcursor grant            <span style="color:var(--text3)"># macOS Accessibility + Screen Recording prompts</span>
+clawdcursor doctor           <span style="color:var(--text3)"># verify permissions, configure AI provider</span>
+clawdcursor status           <span style="color:var(--text3)"># readiness check (consent, permissions, AI config)</span>
+
+<span style="color:var(--text3)"># Run</span>
+clawdcursor mcp              <span style="color:var(--text3)"># stdio MCP server for editor hosts</span>
+clawdcursor mcp --compact    <span style="color:var(--text3)"># same, with 6 compound tools (recommended)</span>
+clawdcursor agent            <span style="color:var(--text3)"># HTTP MCP daemon at :3847/mcp, optional built-in LLM</span>
+clawdcursor agent --no-llm   <span style="color:var(--text3)"># tool surface only — your agent brings its own brain</span>
+clawdcursor stop             <span style="color:var(--text3)"># stop every running mode</span>
+clawdcursor uninstall        <span style="color:var(--text3)"># remove all clawdcursor config and data</span>
+
+<span style="color:var(--text3)"># Guides marketplace</span>
+clawdcursor guides list                  <span style="color:var(--text3)"># what's cached + ratings</span>
+clawdcursor guides info &lt;app&gt;            <span style="color:var(--text3)"># cache metadata for one app</span>
+clawdcursor guides available             <span style="color:var(--text3)"># browse the public registry</span>
+clawdcursor guides install &lt;app&gt;         <span style="color:var(--text3)"># pre-warm cache (--all for offline prep)</span>
+clawdcursor guides refresh &lt;app&gt;         <span style="color:var(--text3)"># force re-fetch</span>
+clawdcursor guides remove &lt;app&gt;          <span style="color:var(--text3)"># evict from cache</span>
+clawdcursor guides clean                 <span style="color:var(--text3)"># wipe cache</span>
+clawdcursor guides lint &lt;file.json&gt;      <span style="color:var(--text3)"># validate a local guide</span>
+clawdcursor guides submit &lt;file.json&gt;    <span style="color:var(--text3)"># lint + print PR instructions</span></code></pre>
     </div>
   </section>
 
@@ -495,23 +628,29 @@
     <div class="code-box" id="os-windows" style="display:block;">
       <div class="code-hd"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span>PowerShell</span></div>
       <pre><code><span class="c-cmd">powershell -c</span> <span class="c-string">"irm https://clawdcursor.com/install.ps1 | iex"</span>
-<span class="c-cmd">clawdcursor doctor</span>  <span class="c-comment"># verify install — then add the MCP block to your agent host config</span></code></pre>
+<span class="c-cmd">clawdcursor consent --accept</span>   <span class="c-comment"># one-time desktop-control authorization (required)</span>
+<span class="c-cmd">clawdcursor doctor</span>            <span class="c-comment"># verify permissions; optionally configure an LLM</span>
+<span class="c-cmd">clawdcursor mcp</span>               <span class="c-comment"># OR `clawdcursor agent` — see "Pick a mode" above</span></code></pre>
     </div>
 
     <div class="code-box" id="os-macos" style="display:none;">
       <div class="code-hd"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span>Terminal</span></div>
       <pre><code><span class="c-cmd">curl -fsSL</span> <span class="c-string">https://clawdcursor.com/install.sh</span> <span class="c-cmd">| bash</span>
-<span class="c-cmd">clawdcursor grant</span>   <span class="c-comment"># Accessibility + Screen Recording</span>
-<span class="c-cmd">clawdcursor doctor</span>  <span class="c-comment"># verify install — then add the MCP block to your agent host config</span></code></pre>
+<span class="c-cmd">clawdcursor grant</span>             <span class="c-comment"># Accessibility + Screen Recording (macOS only)</span>
+<span class="c-cmd">clawdcursor consent --accept</span>   <span class="c-comment"># one-time desktop-control authorization (required)</span>
+<span class="c-cmd">clawdcursor doctor</span>            <span class="c-comment"># verify permissions; optionally configure an LLM</span>
+<span class="c-cmd">clawdcursor mcp</span>               <span class="c-comment"># OR `clawdcursor agent` — see "Pick a mode" above</span></code></pre>
     </div>
 
     <div class="code-box" id="os-linux" style="display:none;">
       <div class="code-hd"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span>Terminal</span></div>
       <pre><code><span class="c-cmd">curl -fsSL</span> <span class="c-string">https://clawdcursor.com/install.sh</span> <span class="c-cmd">| bash</span>
-<span class="c-cmd">clawdcursor doctor</span>  <span class="c-comment"># verify install — then add the MCP block to your agent host config</span></code></pre>
+<span class="c-cmd">clawdcursor consent --accept</span>   <span class="c-comment"># one-time desktop-control authorization (required)</span>
+<span class="c-cmd">clawdcursor doctor</span>            <span class="c-comment"># verify permissions; optionally configure an LLM</span>
+<span class="c-cmd">clawdcursor mcp</span>               <span class="c-comment"># OR `clawdcursor agent` — see "Pick a mode" above</span></code></pre>
     </div>
 
-    <p style="color:var(--text3);font-size:0.78rem;margin-top:10px;">Node.js 20+. Localhost only. <code style="font-size:0.95em">clawdcursor start</code> is for manual testing — agents should use MCP.</p>
+    <p style="color:var(--text3);font-size:0.78rem;margin-top:10px;">Node.js 20+. Localhost only, bearer-token auth on every HTTP request. Installer clones into <code style="font-size:0.95em">~/clawdcursor</code>, builds, and <code style="font-size:0.95em">npm link</code>s a global shim. Pin a version with <code style="font-size:0.95em">$env:VERSION='v0.9.0'</code> (PowerShell) or <code style="font-size:0.95em">VERSION=v0.9.0</code> (bash) before running the installer.</p>
   </section>
 
 </div>
@@ -529,7 +668,13 @@
 </div>
 
 <footer>
-  <p>clawd<strong>cursor</strong> v0.8.8 · localhost only · MIT · <a href="https://clawdcursor.com">Home</a> · <a href="https://github.com/AmrDab/clawdcursor">GitHub</a> · <a href="https://discord.gg/hW29nrEZ8G">Discord</a></p>
+  <p>clawd<strong>cursor</strong> v0.9.0 · localhost only · MIT ·
+    <a href="https://clawdcursor.com">Home</a> ·
+    <a href="https://github.com/AmrDab/clawdcursor">GitHub</a> ·
+    <a href="https://github.com/AmrDab/clawdcursor/blob/main/CHANGELOG.md">Changelog</a> ·
+    <a href="https://github.com/AmrDab/clawdcursor-guides">Guides repo</a> ·
+    <a href="https://discord.gg/hW29nrEZ8G">Discord</a>
+  </p>
 </footer>
 
 <script>

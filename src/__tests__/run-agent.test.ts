@@ -1,0 +1,255 @@
+/**
+ * Direct unit tests for `runAgent` — the canonical agent loop.
+ *
+ * This file targets the loop itself, not the pipeline. Prior to v0.9.0
+ * `runAgent` (728 LOC, the single most important function in the
+ * codebase) had ZERO direct test coverage — exercised only incidentally
+ * via pipeline integration tests. This file covers the three exits
+ * that drive ladder escalation:
+ *
+ *   - happy path: model returns one tool call, then `done`
+ *   - stagnation: STAGNATION_HARD_LIMIT consecutive stale-fingerprint
+ *                 turns → `exit: 'stagnation'`
+ *   - no-tool-call loop: NO_TOOL_CALL_LIMIT consecutive turns where the
+ *                        model produces text but no parseable tool
+ *                        call → `exit: 'give_up'`
+ *
+ * Strategy: mock `callLLMWithTools` so we control exactly what the
+ * model "returns" each turn. Adapter is a minimal stub — the loop's
+ * tool-call dispatch is what we're testing, not adapter behavior.
+ *
+ * OS/model/app-agnostic by construction: nothing here references a
+ * specific platform, provider, or application.
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { PlatformAdapter, WindowInfo, ScreenshotResult } from '../platform/types';
+import type { ToolUseResult, LLMAssistantBlock } from '../llm/client';
+
+// Mock callLLMWithTools BEFORE importing runAgent so the loop binds to
+// the mock. Each test pushes turn-by-turn behavior into `llmTurnQueue`.
+const llmTurnQueue: ToolUseResult[] = [];
+vi.mock('../llm/client', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('../llm/client')>();
+  return {
+    ...orig,
+    callLLMWithTools: vi.fn(async (): Promise<ToolUseResult> => {
+      const next = llmTurnQueue.shift();
+      if (!next) {
+        // Defensive: a runaway test would otherwise loop forever. Returning
+        // an empty turn here lets the loop's NO_TOOL_CALL_LIMIT trip
+        // naturally so the test fails loudly instead of hanging.
+        return { text: '', toolCalls: [], stopReason: 'end_turn', raw: [] };
+      }
+      return next;
+    }),
+  };
+});
+
+import { runAgent } from '../core/agent-loop/agent';
+
+// ─── Helpers ────────────────────────────────────────────────────────
+
+const emptyShot = (): ScreenshotResult => ({
+  buffer: Buffer.alloc(0),
+  width: 1920,
+  height: 1080,
+  scaleFactor: 1,
+});
+
+/**
+ * Adapter stub that returns deterministic, stable values turn over turn.
+ * Same fingerprint inputs (windows + active window + focused element)
+ * each call → fingerprint never changes → stagnation fires naturally
+ * after STAGNATION_WINDOW turns of "no tool that changed the screen."
+ */
+function makeAdapter(): PlatformAdapter {
+  return {
+    platform: 'win32',
+    init: vi.fn(async () => {}),
+    shutdown: vi.fn(async () => {}),
+    checkPermissions: vi.fn(async () => ({ input: true, accessibility: true, screenRecording: true })),
+    requestPermissions: vi.fn(async () => ({ input: true, accessibility: true, screenRecording: true })),
+    getScreenSize: vi.fn(async () => ({
+      logicalWidth: 1920, logicalHeight: 1080,
+      physicalWidth: 1920, physicalHeight: 1080,
+      dpiRatio: 1,
+    })),
+    screenshot: vi.fn(async () => emptyShot()),
+    screenshotRegion: vi.fn(async () => emptyShot()),
+    listWindows: vi.fn(async (): Promise<WindowInfo[]> => [
+      { processId: 100, processName: 'notepad', title: 'Untitled - Notepad', bounds: { x: 0, y: 0, width: 800, height: 600 }, isMinimized: false },
+    ]),
+    getActiveWindow: vi.fn(async () => ({
+      processId: 100, processName: 'notepad', title: 'Untitled - Notepad',
+      bounds: { x: 0, y: 0, width: 800, height: 600 }, isMinimized: false,
+    })),
+    focusWindow: vi.fn(async () => true),
+    maximizeWindow: vi.fn(async () => {}),
+    minimizeWindow: vi.fn(async () => {}),
+    restoreWindow: vi.fn(async () => {}),
+    closeWindow: vi.fn(async () => {}),
+    resizeWindow: vi.fn(async () => {}),
+    listDisplays: vi.fn(async () => [{ id: 0, primary: true, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }]),
+    getUiTree: vi.fn(async () => []),
+    findElements: vi.fn(async () => []),
+    getFocusedElement: vi.fn(async () => null),
+    invokeElement: vi.fn(async () => ({ success: true })),
+    mouseClick: vi.fn(async () => {}),
+    mouseMove: vi.fn(async () => {}),
+    mouseDrag: vi.fn(async () => {}),
+    mouseScroll: vi.fn(async () => {}),
+    typeText: vi.fn(async () => {}),
+    keyPress: vi.fn(async () => {}),
+    readClipboard: vi.fn(async () => ''),
+    writeClipboard: vi.fn(async () => {}),
+    openApp: vi.fn(async () => ({})),
+    launchApp: vi.fn(async () => ({})),
+    cdpDriver: undefined,
+  } as unknown as PlatformAdapter;
+}
+
+/** Convenience: build an LLM turn that requests a single tool call. */
+function turnCall(name: string, args: Record<string, unknown> = {}): ToolUseResult {
+  const id = `c_${Math.random().toString(36).slice(2, 8)}`;
+  const raw: LLMAssistantBlock[] = [
+    { type: 'tool_use', id, name, input: args },
+  ];
+  return {
+    text: '',
+    toolCalls: [{ id, name, args }],
+    stopReason: 'tool_use',
+    raw,
+  };
+}
+
+/** Convenience: build an LLM turn that produces text but NO tool call. */
+function turnNoCall(text = 'thinking...'): ToolUseResult {
+  return {
+    text,
+    toolCalls: [],
+    stopReason: 'end_turn',
+    raw: [{ type: 'text', text }],
+  };
+}
+
+const LLM_CONFIG = {
+  text: { baseUrl: 'http://stub', model: 'stub-text', apiKey: 'k', isAnthropic: false },
+};
+
+// ─── Tests ──────────────────────────────────────────────────────────
+
+describe('runAgent — happy path', () => {
+  beforeEach(() => {
+    llmTurnQueue.length = 0;
+  });
+
+  it('completes a task with one action and a done() call → exit:"done", success:true', async () => {
+    // Turn 1: read the screen (a real tool in the blind catalog).
+    // Turn 2: declare done with evidence.
+    llmTurnQueue.push(turnCall('read_screen'));
+    llmTurnQueue.push(turnCall('done', { evidence: 'screen shows the expected content' }));
+
+    const result = await runAgent(
+      { task: 'orient and finish', mode: 'blind', maxTurns: 10 },
+      { adapter: makeAdapter(), llm: LLM_CONFIG },
+    );
+
+    expect(result.exit).toBe('done');
+    expect(result.success).toBe(true);
+    expect(result.steps.length).toBe(2);
+    expect(result.steps[1].toolName).toBe('done');
+    expect(result.llmCalls).toBe(2);
+  });
+});
+
+describe('runAgent — stagnation exit', () => {
+  beforeEach(() => {
+    llmTurnQueue.length = 0;
+  });
+
+  it('aborts with exit:"stagnation" when the fingerprint stays stale across STAGNATION_HARD_LIMIT consecutive turns', async () => {
+    // Every turn: key_press with a UNIQUE key value. Two properties
+    // matter:
+    //   1. Unique args each turn keeps the runaway guard (which counts
+    //      identical-args repeats in the last 6 turns) below threshold.
+    //   2. key_press is `changesScreen:true` so the loop re-snapshots
+    //      post-action and pushes the new fingerprint into FingerprintHistory.
+    //      Because the adapter stub returns IDENTICAL window/active/etc
+    //      state every call, the fingerprint is stable across turns and
+    //      `isStagnant(STAGNATION_WINDOW=3)` keeps firing; the counter
+    //      accumulates and `STAGNATION_HARD_LIMIT=5` trips the exit.
+    const keys = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12', 'F13', 'F14'];
+    for (const key of keys) llmTurnQueue.push(turnCall('key', { key }));
+
+    const result = await runAgent(
+      { task: 'pointless loop', mode: 'blind', maxTurns: 20 },
+      { adapter: makeAdapter(), llm: LLM_CONFIG },
+    );
+
+    expect(result.exit).toBe('stagnation');
+    expect(result.success).toBe(false);
+    // We should have stopped well before maxTurns (20).
+    expect(result.steps.length).toBeLessThan(20);
+  });
+
+  it('does NOT count pure-compute tools (build_uri, list_windows) toward stagnation', async () => {
+    // Regression test for the Outlook send-email run: the agent had
+    // called build_uri to construct a mailto URI and was one turn away
+    // from dispatching it via open_uri when the stagnation hard-abort
+    // fired. build_uri is changesScreen:false — it's a pure encoder —
+    // and shouldn't count as a stale-screen turn.
+    //
+    // Mix: changesScreen:false tools (build_uri, list_windows) sprinkled
+    // between changesScreen:true ones that keep the fingerprint stable.
+    // Without the fix, the false tools also count toward the stagnation
+    // counter and the hard-abort fires after 5. With the fix, only the
+    // changesScreen:true tools count, so we can have many more turns
+    // before tripping the limit.
+    const sequence: Array<{ name: string; args: Record<string, unknown> }> = [
+      { name: 'build_uri',    args: { scheme: 'mailto', path: 'a@b.com' } },
+      { name: 'list_windows', args: {} },
+      { name: 'build_uri',    args: { scheme: 'mailto', path: 'c@d.com' } },
+      { name: 'list_windows', args: {} },
+      { name: 'build_uri',    args: { scheme: 'mailto', path: 'e@f.com' } },
+      { name: 'list_windows', args: {} },
+      { name: 'done',         args: { evidence: 'computed the URIs we needed' } },
+    ];
+    for (const t of sequence) llmTurnQueue.push(turnCall(t.name, t.args));
+
+    const result = await runAgent(
+      { task: 'use compute tools', mode: 'blind', maxTurns: 20 },
+      { adapter: makeAdapter(), llm: LLM_CONFIG },
+    );
+
+    // The previous behavior would have aborted with exit:'stagnation'
+    // after STAGNATION_HARD_LIMIT (5) of those pure-compute turns. With
+    // the fix the agent reaches the done() call cleanly.
+    expect(result.exit).toBe('done');
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('runAgent — no-tool-call loop exit', () => {
+  beforeEach(() => {
+    llmTurnQueue.length = 0;
+  });
+
+  it('aborts with exit:"give_up" when the model emits NO_TOOL_CALL_LIMIT consecutive turns of text-only output', async () => {
+    // 3 in a row should trip NO_TOOL_CALL_LIMIT and exit give_up.
+    // Queue 8 to prove early termination — if the loop ran past
+    // NO_TOOL_CALL_LIMIT we'd burn through all of them.
+    for (let i = 0; i < 8; i++) llmTurnQueue.push(turnNoCall(`turn ${i} thinking`));
+
+    const result = await runAgent(
+      { task: 'degenerate model', mode: 'blind', maxTurns: 20 },
+      { adapter: makeAdapter(), llm: LLM_CONFIG },
+    );
+
+    expect(result.exit).toBe('give_up');
+    expect(result.success).toBe(false);
+    // Should have stopped at NO_TOOL_CALL_LIMIT (3), well under maxTurns
+    // and well under the 8 queued empty turns.
+    expect(result.steps.length).toBeLessThan(8);
+  });
+});

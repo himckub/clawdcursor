@@ -22,6 +22,8 @@ export function getDesktopTools(): ToolDefinition[] {
       description: 'Take a screenshot of the entire screen, resized to 1280px wide. Returns the image and scale metadata. Use read_screen (accessibility tree) first — only screenshot when you need visual confirmation.',
       parameters: {},
       category: 'perception',
+      compactGroup: 'computer',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         const frame = await ctx.desktop.captureForLLM();
@@ -43,6 +45,8 @@ export function getDesktopTools(): ToolDefinition[] {
         height: { type: 'number', description: 'Height in image-space pixels', required: true },
       },
       category: 'perception',
+      compactGroup: 'computer',
+      safetyTier: 0,
       handler: async ({ x, y, width, height }, ctx) => {
         await ctx.ensureInitialized();
         const sf = ctx.getScreenshotScaleFactor();
@@ -63,6 +67,8 @@ export function getDesktopTools(): ToolDefinition[] {
       description: 'Get the screen dimensions and scale factor.',
       parameters: {},
       category: 'perception',
+      compactGroup: 'window',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         const size = ctx.desktop.getScreenSize();
@@ -91,6 +97,8 @@ export function getDesktopTools(): ToolDefinition[] {
         y: { type: 'number', description: 'Y coordinate in image-space', required: true },
       },
       category: 'mouse',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y }, ctx) => {
         await ctx.ensureInitialized();
         const sf = ctx.getMouseScaleFactor();
@@ -109,6 +117,8 @@ export function getDesktopTools(): ToolDefinition[] {
         y: { type: 'number', description: 'Y coordinate in image-space', required: true },
       },
       category: 'mouse',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y }, ctx) => {
         await ctx.ensureInitialized();
         const sf = ctx.getMouseScaleFactor();
@@ -126,6 +136,8 @@ export function getDesktopTools(): ToolDefinition[] {
         y: { type: 'number', description: 'Y coordinate in image-space', required: true },
       },
       category: 'mouse',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y }, ctx) => {
         await ctx.ensureInitialized();
         const sf = ctx.getMouseScaleFactor();
@@ -143,6 +155,8 @@ export function getDesktopTools(): ToolDefinition[] {
         y: { type: 'number', description: 'Y coordinate in image-space', required: true },
       },
       category: 'mouse',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y }, ctx) => {
         await ctx.ensureInitialized();
         const sf = ctx.getMouseScaleFactor();
@@ -161,6 +175,8 @@ export function getDesktopTools(): ToolDefinition[] {
         amount: { type: 'number', description: 'Scroll amount in wheel ticks (default: 3)', required: false, default: 3 },
       },
       category: 'mouse',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ x, y, direction, amount }, ctx) => {
         await ctx.ensureInitialized();
         const sf = ctx.getMouseScaleFactor();
@@ -185,6 +201,8 @@ export function getDesktopTools(): ToolDefinition[] {
         y2: { type: 'number', description: 'Alias for endY', required: false },
       },
       category: 'mouse',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ startX, startY, endX, endY, x1, y1, x2, y2 }, ctx) => {
         await ctx.ensureInitialized();
         const sx = startX ?? x1;
@@ -205,20 +223,42 @@ export function getDesktopTools(): ToolDefinition[] {
 
     {
       name: 'type_text',
-      description: 'Type text into the currently focused element via clipboard paste (reliable, no dropped chars).',
+      description: 'Type text into the currently focused element. Internally uses clipboard paste for reliability (no dropped chars). The user clipboard is saved before and restored after, so calling type_text never clobbers any text the caller had previously placed on the clipboard.',
       parameters: {
         text: { type: 'string', description: 'The text to type', required: true },
       },
       category: 'keyboard',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ text }, ctx) => {
         await ctx.ensureInitialized();
         const active = await ctx.a11y.getActiveWindow();
         const activeInfo = active ? `[${active.processName}] "${active.title}"` : '(unknown)';
+
+        // Preserve the user's clipboard contents around the paste-as-type
+        // operation. Without this, callers who do
+        //   write_clipboard("important sentence")
+        //   type_text("\nheader\n")
+        //   key_press("ctrl+v")
+        // get the header text re-pasted instead of the sentence — type_text
+        // silently overwrote the clipboard. Save/restore makes type_text
+        // transparent to the clipboard.
+        let saved: string | null = null;
+        try { saved = await ctx.a11y.readClipboard(); } catch { /* clipboard unreadable — leave saved=null, restore becomes a no-op below */ }
+
         await ctx.a11y.writeClipboard(text);
         await new Promise(r => setTimeout(r, 50));
         // Paste combo is platform-specific
         await ctx.desktop.keyPress(IS_MAC ? 'super+v' : 'ctrl+v');
         await new Promise(r => setTimeout(r, 100));
+
+        // Restore clipboard. Best-effort — if the read failed (no clipboard
+        // available) or the restore throws, we don't surface the error;
+        // type_text's contract is about typing, not clipboard ops.
+        if (saved !== null) {
+          try { await ctx.a11y.writeClipboard(saved); } catch { /* best-effort */ }
+        }
+
         ctx.a11y.invalidateCache();
         return { text: `Typed ${text.length} chars into ${activeInfo}` };
       },
@@ -231,6 +271,8 @@ export function getDesktopTools(): ToolDefinition[] {
         key: { type: 'string', description: 'Key or combo to press (e.g. "Return", "ctrl+a", "F5", "Escape")', required: true },
       },
       category: 'keyboard',
+      compactGroup: 'computer',
+      safetyTier: 1,
       handler: async ({ key }, ctx) => {
         await ctx.ensureInitialized();
         const lower = (key as string).toLowerCase().replace(/\s+/g, '');

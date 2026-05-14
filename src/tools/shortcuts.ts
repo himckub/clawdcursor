@@ -5,9 +5,9 @@
  *   shortcuts_list    — query available shortcuts by category/context
  *   shortcuts_execute — run a shortcut by intent (fuzzy-matched)
  *
- * This bridges the gap between the internal ActionRouter (which knows all
- * shortcuts) and external agents calling MCP tools (which previously had
- * to independently know keyboard combos).
+ * This bridges the gap between the pipeline router (`src/core/router/router.ts`)
+ * — which knows all shortcuts — and external agents calling MCP tools
+ * that previously had to independently know keyboard combos.
  */
 
 import * as os from 'os';
@@ -59,6 +59,8 @@ export function getShortcutTools(): ToolDefinition[] {
         },
       },
       category: 'keyboard',
+      compactGroup: 'system',
+      safetyTier: 0,
       handler: async ({ category, context }) => {
         const platform = os.platform();
         let filtered = SHORTCUTS;
@@ -118,6 +120,8 @@ export function getShortcutTools(): ToolDefinition[] {
         },
       },
       category: 'keyboard',
+      compactGroup: 'system',
+      safetyTier: 1,
       handler: async ({ intent, context }, ctx) => {
         await ctx.ensureInitialized();
 

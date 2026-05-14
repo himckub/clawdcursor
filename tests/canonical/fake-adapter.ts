@@ -6,7 +6,7 @@
  * PipelineAction. No real LLM calls; tests are deterministic.
  */
 
-import type { PipelineAction } from '../../src/pipeline/types';
+import type { PipelineAction } from '../../src/core/pipeline-types';
 
 export interface FakeAgentState {
   task: string;
@@ -28,12 +28,14 @@ export type FakeRule = (state: FakeAgentState) => PipelineAction | null;
  */
 export const FAKE_RULES: FakeRule[] = [
   // "open <app>" — router handles on step 0; the agent is only consulted if
-  // router misses, which would itself be a bug. But model the fallback here
-  // anyway so a failing router doesn't cascade.
+  // router misses, which would itself be a bug. Model the fallback as
+  // `give_up` so the pipeline ladder escalates correctly — the agent doesn't
+  // have a `run_playbook` action in its vocabulary (that's a pipeline-level
+  // concern, not a per-turn action emitted by the agent loop).
   (s) => {
     if (/^open\s+(notepad|textedit|chrome|gmail)\b/i.test(s.task) && s.step === 0) {
       const app = /open\s+(\S+)/i.exec(s.task)?.[1] ?? '';
-      return { type: 'run_playbook', name: 'no-op', args: { note: `router should handle open ${app}` } };
+      return { type: 'give_up', reason: `router should have handled "open ${app}"; agent fallback hit` };
     }
     return null;
   },
@@ -50,10 +52,13 @@ export const FAKE_RULES: FakeRule[] = [
     return null;
   },
 
-  // "send email in Outlook" — playbook path.
+  // "send email in Outlook" — playbook path. The playbook itself runs at the
+  // pipeline level (src/tools/playbooks/), not via an agent action. From the
+  // agent's perspective, if a task reaches it, the playbook layer already
+  // missed and the agent should `give_up` so the ladder escalates.
   (s) => {
     if (/send\s+.*email.*outlook|compose.*outlook/i.test(s.task) && s.step === 0) {
-      return { type: 'run_playbook', name: 'outlook-send', args: { to: 'bob@acme.com', subject: 'hi', body: 'test' } };
+      return { type: 'give_up', reason: 'outlook-send playbook should have handled this; agent fallback hit' };
     }
     if (/send\s+.*email.*outlook|compose.*outlook/i.test(s.task) && s.step === 1) {
       return { type: 'done', reason: 'outlook-send playbook finished' };

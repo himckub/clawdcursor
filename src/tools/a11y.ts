@@ -7,7 +7,7 @@
 
 import type { ToolDefinition, ToolContext } from './types';
 import { a11yToMouse } from './types';
-import type { UiElement, WindowInfo } from '../v2/platform/types';
+import type { UiElement, WindowInfo } from '../platform/types';
 
 function formatWindow(w: WindowInfo): string {
   return `${w.isMinimized ? '[MIN]' : '[OK]'} [${w.processName}] "${w.title}" pid:${w.processId}` +
@@ -37,6 +37,8 @@ export function getA11yTools(): ToolDefinition[] {
         processId: { type: 'number', description: 'Focus on a specific process ID (optional — reads foreground window by default)', required: false },
       },
       category: 'perception',
+      compactGroup: 'accessibility',
+      safetyTier: 0,
       handler: async ({ processId }, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -70,6 +72,8 @@ export function getA11yTools(): ToolDefinition[] {
       description: 'List all visible windows with their title, process name, PID, and bounds.',
       parameters: {},
       category: 'window',
+      compactGroup: 'window',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -89,6 +93,8 @@ export function getA11yTools(): ToolDefinition[] {
       description: 'Get the currently focused/foreground window.',
       parameters: {},
       category: 'window',
+      compactGroup: 'window',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -112,6 +118,8 @@ export function getA11yTools(): ToolDefinition[] {
       description: 'Get the currently focused UI element (keyboard focus). Returns name, control type, value, bounds, and process ID.',
       parameters: {},
       category: 'window',
+      compactGroup: 'accessibility',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -134,6 +142,8 @@ export function getA11yTools(): ToolDefinition[] {
         title: { type: 'string', description: 'Window title substring to match', required: false },
       },
       category: 'window',
+      compactGroup: 'window',
+      safetyTier: 1,
       handler: async ({ processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
 
@@ -181,7 +191,32 @@ export function getA11yTools(): ToolDefinition[] {
         }
         if (!targetBounds && targetPid) {
           const windows = await ctx.a11y.getWindows(true);
-          const win = windows?.find((w: any) => w.processId === targetPid);
+          // Title-as-disambiguator: when caller passed BOTH pid AND title, the
+          // title takes precedence as the primary key. This matters on Win11
+          // Notepad where multiple windows share one pid (tab model) — without
+          // this, we'd silently focus whichever tab `find` returned first,
+          // which is non-deterministic across launches.
+          let win: any;
+          if (title) {
+            const t = (title as string).toLowerCase();
+            const candidates = (windows ?? []).filter((w: any) =>
+              w.processId === targetPid && w.title.toLowerCase().includes(t)
+            );
+            // Prefer on-screen, non-minimized windows when multiple match.
+            candidates.sort((a: any, b: any) => {
+              const aOn = (a.bounds.x >= 0 && a.bounds.y >= 0 && !a.isMinimized) ? 1 : 0;
+              const bOn = (b.bounds.x >= 0 && b.bounds.y >= 0 && !b.isMinimized) ? 1 : 0;
+              return bOn - aOn;
+            });
+            win = candidates[0];
+            if (!win) {
+              // Fall back to pid-only match if no title match — caller may
+              // have passed a stale title.
+              win = windows?.find((w: any) => w.processId === targetPid);
+            }
+          } else {
+            win = windows?.find((w: any) => w.processId === targetPid);
+          }
           if (win?.bounds) targetBounds = win.bounds;
         }
 
@@ -255,6 +290,8 @@ export function getA11yTools(): ToolDefinition[] {
         processId: { type: 'number', description: 'Process ID to search within', required: false },
       },
       category: 'window',
+      compactGroup: 'accessibility',
+      safetyTier: 0,
       handler: async ({ name, controlType, automationId, processId }, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -283,6 +320,8 @@ export function getA11yTools(): ToolDefinition[] {
       description: 'Read the current text content of the OS clipboard.',
       parameters: {},
       category: 'clipboard',
+      compactGroup: 'system',
+      safetyTier: 0,
       handler: async (_params, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -296,11 +335,13 @@ export function getA11yTools(): ToolDefinition[] {
 
     {
       name: 'write_clipboard',
-      description: 'Write text to the OS clipboard.',
+      description: 'Write text to the OS clipboard. Tier 2 (mutation): overwrites the user\'s clipboard, which can hijack subsequent copy/paste flows. Reversibility is via a fresh user-initiated copy, not by the agent.',
       parameters: {
         text: { type: 'string', description: 'Text to write to clipboard', required: true },
       },
       category: 'clipboard',
+      compactGroup: 'system',
+      safetyTier: 2,
       handler: async ({ text }, ctx) => {
         await ctx.ensureInitialized();
         if (ctx.platform) {
@@ -321,6 +362,7 @@ export function getA11yTools(): ToolDefinition[] {
         title: { type: 'string', description: 'Window title substring to match', required: false },
       },
       category: 'window',
+      safetyTier: 2,
       handler: async ({ processName, processId, title }, ctx) => {
         await ctx.ensureInitialized();
 

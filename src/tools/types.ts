@@ -45,7 +45,21 @@ export interface ToolContext {
    * Lazy-loaded via `ensureInitialized` so tool handlers don't need
    * async dance on every call.
    */
-  platform?: import('../v2/platform/types').PlatformAdapter;
+  platform?: import('../platform/types').PlatformAdapter;
+  /**
+   * The autonomous Agent — present in `clawdcursor agent` (the daemon)
+   * and undefined when run via stdio MCP without a running agent.
+   * Used by submit_task / abort_task / agent_status / task_logs_*.
+   * v0.9 PR7.2: was previously implicit on `agent.x` accesses inside
+   * REST handlers; now it lives on ToolContext so MCP tools can use it.
+   */
+  agent?: import('../core/agent').Agent;
+  /**
+   * Optional log buffer accessor — populated by the daemon's createServer.
+   * MCP `logs_recent` reads through this; null/missing means logs are not
+   * captured (e.g. stdio MCP).
+   */
+  getLogBuffer?: () => Array<{ timestamp: number; level: string; message: string }>;
   /** Image-space → logical (mouse) coords. mouseCoord = imageCoord * factor */
   getMouseScaleFactor: () => number;
   /** Image-space → physical pixel coords (for screenshot region crop) */
@@ -53,6 +67,9 @@ export interface ToolContext {
   /** Ensure subsystems are initialized (lazy init gate) */
   ensureInitialized: () => Promise<void>;
 }
+
+/** The 6 compact compound tool names */
+export type CompactGroup = 'computer' | 'accessibility' | 'window' | 'system' | 'browser' | 'task';
 
 /** A single tool definition — transport agnostic */
 export interface ToolDefinition {
@@ -64,6 +81,25 @@ export interface ToolDefinition {
   parameters: Record<string, ParameterDef>;
   /** Tool category for organization */
   category: 'perception' | 'mouse' | 'keyboard' | 'window' | 'clipboard' | 'browser' | 'orchestration';
+  /**
+   * The compact compound this granular tool belongs to.
+   * Derived by reverse-engineering the ACTION_MAP in compact.ts.
+   * Undefined for granular tools that are not exposed via any compound
+   * (e.g. smart_read, smart_click, smart_type, minimize_window).
+   */
+  compactGroup?: CompactGroup;
+  /**
+   * Safety tier for the canonical safety gate.
+   *
+   *   0 — read-only (screenshot, a11y snapshot, clipboard read …)
+   *   1 — neutral input (click, type, scroll — reversible, no irreversible side-effect)
+   *   2 — mutation (close window, write clipboard, navigate …)
+   *   3 — destructive / system (cdp_evaluate arbitrary JS, relaunch_with_cdp …)
+   *
+   * When omitted the gate falls back to the `TOOL_TIER` name-lookup table in
+   * `pipeline/safety/layer.ts` for backward-compatibility.
+   */
+  safetyTier?: 0 | 1 | 2 | 3;
   /** The handler function */
   handler: (params: Record<string, any>, ctx: ToolContext) => Promise<ToolResult>;
 }

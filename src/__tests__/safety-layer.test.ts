@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { evaluate, isAllowed } from '../pipeline/safety/layer';
+import { evaluate, isAllowed, evaluateInput } from '../core/safety';
 
 describe('SafetyLayer.evaluate', () => {
   describe('read tier', () => {
@@ -83,5 +83,21 @@ describe('SafetyLayer.evaluate', () => {
       expect(d.decision).toBe('allow');
       expect(d.tier).toBe('input');
     });
+  });
+});
+
+describe('evaluateInput (canonical safety gate)', () => {
+  it('returns allow:true for a read-tier tool', () => {
+    const d = evaluateInput({ toolName: 'desktop_screenshot', args: {} });
+    expect(d.allow).toBe(true);
+    expect(d.tier).toBe(0);
+  });
+
+  it('safetyTier:3 injected via ToolDefinition overrides name-based lookup', () => {
+    // 'wait' is normally tier 0 (read), but declaring it as tier 3 should elevate it
+    const d = evaluateInput({ toolName: 'wait', args: {}, safetyTier: 3 });
+    // tier 3 maps to 'destructive' — which means decision is 'confirm', so allow === false
+    expect(d.allow).toBe(false);
+    expect(d.tier).toBe(3);
   });
 });

@@ -162,6 +162,8 @@ export function getElectronBridgeTools(): ToolDefinition[] {
         'unexpectedly empty tree on a "native" app.',
       parameters: {},
       category: 'perception',
+      compactGroup: 'system',
+      safetyTier: 0,
       handler: async (_params, ctx: ToolContext): Promise<ToolResult> => {
         await ctx.ensureInitialized();
         if (!ctx.platform) {
@@ -173,9 +175,15 @@ export function getElectronBridgeTools(): ToolDefinition[] {
         // Port scan is cheap; do it once and reuse.
         const cdpPort = await findLiveCdpPort();
 
+        const seenPids = new Set<number>();
         for (const w of windows) {
           const fp = matchFingerprint(w.processName, w.title);
           if (!fp) continue;
+          // Apps can expose multiple top-level windows for the same process
+          // (e.g. Outlook's main window + a hidden notification host). One
+          // candidate per pid is what callers actually want.
+          if (seenPids.has(w.processId)) continue;
+          seenPids.add(w.processId);
           candidates.push({
             processName: w.processName,
             processId: w.processId,
@@ -210,6 +218,8 @@ export function getElectronBridgeTools(): ToolDefinition[] {
         port:    { type: 'number', description: 'Port to open for CDP. Default 9222.', required: false, default: 9222 },
       },
       category: 'orchestration',
+      compactGroup: 'system',
+      safetyTier: 3,
       handler: async ({ appName, port }, ctx: ToolContext): Promise<ToolResult> => {
         await ctx.ensureInitialized();
         if (!ctx.platform) {
