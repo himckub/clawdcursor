@@ -1,0 +1,72 @@
+name: codeql
+
+# GitHub native code-scanning. Runs CodeQL static analysis on TypeScript/JS,
+# uploads SARIF to the repo's Security → Code scanning tab.
+#
+# Triggers:
+#   - every push to main (catches anything that slipped past PR review)
+#   - every PR targeting main (gate)
+#   - weekly cron (catches new queries / fresh CWE classifications upstream
+#     when the source hasn't moved)
+#
+# Permissions:
+#   - security-events: write — required to upload SARIF
+#   - contents:        read  — checkout
+#   - actions:         read  — action telemetry
+#
+# Cost: ~5 min per run on a 50k LOC TypeScript codebase. Free for public repos.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays 09:00 UTC — keeps findings fresh against upstream query updates
+    # without piling on weekday CI noise.
+    - cron: '0 9 * * 1'
+
+# Reduce noise: cancel in-progress runs for the same ref when a new one starts.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 'javascript-typescript' covers both .js and .ts; CodeQL deduplicates.
+        language: [javascript-typescript]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # security-and-quality = security queries + maintainability queries.
+          # security-extended = same as security-and-quality minus the noisier
+          # quality queries (deeper security coverage). Pick the one that
+          # surfaces real bugs without drowning the Security tab.
+          queries: security-and-quality
+
+      # No manual build — CodeQL's autobuild handles TS via tsc detection.
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:${{ matrix.language }}'

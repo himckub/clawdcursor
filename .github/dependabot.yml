@@ -1,26 +1,73 @@
+# Dependabot configuration.
+#
+# Two ecosystems wired:
+#   1. npm (runtime + dev deps) — weekly grouped PRs.
+#   2. github-actions (workflow pins) — monthly.
+#
+# Security updates: separate from the regular weekly cadence. GitHub fires
+# dependabot security PRs as soon as an advisory lands matching a pinned
+# dep, regardless of the schedule below. Those PRs are NOT grouped (so each
+# advisory has its own audit trail).
+#
+# Grouping strategy: collapse all @types/* and the eslint/typescript-eslint
+# constellation into single grouped PRs. Everything else gets its own PR
+# so changelog review stays manageable.
+#
+# Companion: .github/workflows/codeql.yml runs static-analysis on every PR
+# to main + weekly cron. Findings land in Security → Code scanning.
+
 version: 2
 updates:
+  # ── npm runtime + dev deps ─────────────────────────────────────────────
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
       day: monday
+      time: '09:00'
+      timezone: 'America/New_York'
     open-pull-requests-limit: 5
+    versioning-strategy: increase
+    labels:
+      - dependencies
+      - npm
+    commit-message:
+      prefix: 'chore(deps):'
+      prefix-development: 'chore(dev-deps):'
+      include: scope
     groups:
+      # @types/* drift together — bumping one in isolation creates churn.
       types:
         patterns:
-          - "@types/*"
+          - '@types/*'
+      # eslint + typescript-eslint constellation — releases are interlocked.
       eslint:
         patterns:
-          - "eslint*"
-          - "@eslint/*"
-          - "@typescript-eslint/*"
+          - 'eslint*'
+          - '@eslint/*'
+          - '@typescript-eslint/*'
+      # vitest, vite, @vitest/* — same release cadence upstream.
+      vitest:
+        patterns:
+          - 'vitest'
+          - 'vite'
+          - '@vitest/*'
     ignore:
-      # @nut-tree-fork/nut-js pulls in jimp; the moderate advisories chain through
-      # there. Track upstream rather than chasing transitive dependabot noise.
-      - dependency-name: "jimp"
+      # @nut-tree-fork/nut-js pulls in jimp; the moderate advisories chain
+      # through there. Track upstream rather than chasing transitive
+      # dependabot noise. Security-update PRs for jimp's advisories are
+      # NOT suppressed by this ignore — they still come through, just not
+      # as a regular weekly upgrade.
+      - dependency-name: 'jimp'
 
+  # ── GitHub Actions versions ────────────────────────────────────────────
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: 'ci(deps):'

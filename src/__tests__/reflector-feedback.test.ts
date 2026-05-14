@@ -405,7 +405,10 @@ describe('Pipeline Reflector override (CLAWD_REFLECTOR=1)', () => {
     expect(result.success).toBe(true);
     // verifyWithFeedback was called twice: once rejecting blind, once passing vision.
     expect(m.verifyWithFeedback).toHaveBeenCalledTimes(2);
-  });
+  }, 30_000); // CI flake fix (v0.9.1): macOS Node 22 vi.mock cold-start can
+              // push this past the 15s global timeout on the first test in
+              // the describe block. Pipeline-level test does 2 rungs of work
+              // with real preprocessor / safety / reflector code paths.
 
   it('without CLAWD_REFLECTOR → pipeline uses default ladder, not override', async () => {
     delete process.env.CLAWD_REFLECTOR;
