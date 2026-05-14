@@ -25,7 +25,9 @@ import type { ClassifyResult } from '../pipeline-types';
 import { classifyTask } from '../classify/classify';
 import { classifyCapability, type Capability } from '../classify/capability';
 import { decompose as regexDecompose } from '../decompose/parser';
-import { detectApp, loadGuide, getWorkflowForTask, renderAppKnowledge } from '../../llm/knowledge/loader';
+import {
+  detectApp, loadGuide, getWorkflowForTask, renderAppKnowledge, prefetchGuideForApp,
+} from '../../llm/knowledge/loader';
 import { matchPlaybook } from '../../tools/playbooks';
 
 export type Strategy =
@@ -108,6 +110,11 @@ export function preprocess(task: string, ctx: PreprocessContext = {}): Preproces
   // This hint goes to the executor regardless of strategy.
   const appHint = ctx.activeWindowTitle ?? ctx.activeWindowProcessName ?? '';
   const appKey = appHint ? detectApp(appHint) ?? undefined : undefined;
+  // Fire a remote prefetch in the background so the cache is warm by the
+  // NEXT call to loadGuide for this app. First-touch uses whatever's already
+  // local (bundled / cached / user-override); the fetch arrives asynchronously
+  // for subsequent tasks. Idempotent within a session.
+  if (appKey) prefetchGuideForApp(appKey);
   // `getWorkflowForTask` now returns a fragment whenever the app is detected
   // (with the matched workflow ★-highlighted if a keyword matched). The
   // separate `loadGuide` fallback below stays as a safety net for the rare

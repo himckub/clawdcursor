@@ -1,9 +1,20 @@
 /**
  * Knowledge-loader tests: domain detection + bundled guides + user override +
  * workflow → prompt fragment synthesis.
+ *
+ * The Phase 3 marketplace work moved most curated guides out of the bundled
+ * `src/llm/knowledge/guides/` directory and into `seed-registry/guides/` —
+ * those are the source files for the GitHub clawdcursor-guides repo. The
+ * binary now ships only msedge + notepad as bundled core; the rest are
+ * fetched from the remote registry at runtime.
+ *
+ * Tests still want to assert on the curated guides without going over the
+ * network, so we point `CLAWD_BUNDLED_GUIDES_DIR` at the seed-registry copy
+ * for the duration of the suite. The loader reads that env var at every
+ * `bundledGuidesDir()` call.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -12,6 +23,23 @@ import {
   loadGuide, clearCache, getWorkflowForTask,
   saveLearnedLesson, mergeIntoUserGuide, resolveAppKey,
 } from '../llm/knowledge/loader';
+
+const SEED_REGISTRY_GUIDES = path.resolve(__dirname, '../../seed-registry/guides');
+
+/**
+ * Helper for describes that exercise guides moved to seed-registry/ (gmail,
+ * outlook, slack, youtube, …). Other describes — notably the write-path
+ * tests — need the real bundled dir where notepad.json still lives, so
+ * they should NOT call this.
+ */
+function useSeedRegistryAsBundle() {
+  const orig = process.env.CLAWD_BUNDLED_GUIDES_DIR;
+  beforeAll(() => { process.env.CLAWD_BUNDLED_GUIDES_DIR = SEED_REGISTRY_GUIDES; });
+  afterAll(() => {
+    if (orig === undefined) delete process.env.CLAWD_BUNDLED_GUIDES_DIR;
+    else process.env.CLAWD_BUNDLED_GUIDES_DIR = orig;
+  });
+}
 
 describe('detectApp', () => {
   it.each([
@@ -37,6 +65,7 @@ describe('detectApp', () => {
 });
 
 describe('loadGuide — bundled guides', () => {
+  useSeedRegistryAsBundle();
   beforeEach(() => clearCache());
 
   it('loads gmail.json from the bundle', () => {
@@ -71,6 +100,7 @@ describe('loadGuide — bundled guides', () => {
 });
 
 describe('loadGuide — user override takes precedence', () => {
+  useSeedRegistryAsBundle();
   let tmpHome: string;
   const origClawdHome = process.env.CLAWD_HOME;
 
@@ -190,6 +220,8 @@ describe('learn_app write path (saveLearnedLesson + mergeIntoUserGuide)', () => 
 });
 
 describe('getWorkflowForTask', () => {
+  useSeedRegistryAsBundle();
+
   it('matches "send email" to compose_and_send in Gmail (★-highlighted)', () => {
     const r = getWorkflowForTask(
       'send email to bob@acme.com about lunch',

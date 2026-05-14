@@ -22,12 +22,19 @@ import * as path from 'path';
 import * as os from 'os';
 import type { AppGuide, AppWorkflow } from '../../core/pipeline-types';
 import { detectApp } from './domain-map';
+import { getCached, touchUsage } from './cache';
+import { fetchGuide } from './remote-loader';
+import { lintGuide } from './guide-linter';
 
 export { detectApp };
 
 function bundledGuidesDir(): string {
-  // Module is at src/llm/knowledge/loader.ts → bundled guides live next to it.
-  return path.join(__dirname, 'guides');
+  // Module is at src/llm/knowledge/loader.ts → bundled guides live next to it
+  // by default. `CLAWD_BUNDLED_GUIDES_DIR` lets the test suite (and any
+  // packager that ships an alternate location) redirect without changing
+  // code. Used by knowledge.test.ts to point at `seed-registry/guides/`
+  // for tests that still reference now-remote-only apps.
+  return process.env.CLAWD_BUNDLED_GUIDES_DIR || path.join(__dirname, 'guides');
 }
 
 function userGuidesDir(): string {
@@ -38,39 +45,108 @@ function userGuidesDir(): string {
 /** Cache keyed on app name. null = previously-attempted miss (don't re-read disk). */
 const cache = new Map<string, AppGuide | null>();
 
+/** Apps for which a remote prefetch is already in-flight or completed this session. */
+const inFlightPrefetch = new Set<string>();
+
 /**
- * Load an `AppGuide` by app key. User override (if present) wins over bundled.
- * Returns null if neither exists. Cached for the life of the process.
+ * Normalize a guide loaded from disk so the rest of the codebase can rely on
+ * `name` being a string. Also re-runs the linter as defense-in-depth even on
+ * bundled guides (a corrupt or tampered bundle should fail closed, not inject).
+ * Returns null when the guide fails lint.
+ */
+function adoptGuide(raw: unknown): AppGuide | null {
+  const lint = lintGuide(raw);
+  if (!lint.ok) {
+    // eslint-disable-next-line no-console
+    console.warn('[guide-loader] rejected guide failing lint', {
+      errors: lint.findings.filter(f => f.severity === 'error').map(f => f.rule),
+    });
+    return null;
+  }
+  const guide = raw as AppGuide;
+  if (!guide.name) guide.name = guide.app;
+  return guide;
+}
+
+/**
+ * Synchronous guide lookup. Reads, in priority order:
+ *   1. process-memory cache (zero IO)
+ *   2. user-override dir (`~/.clawdcursor/ui-knowledge/{app}.json`) — the
+ *      learn_app write target. Highest user-intent priority.
+ *   3. remote-fetch cache (`~/.clawdcursor/guide-cache/{app}.json`) — touched
+ *      by `prefetchGuideForApp`. Stale entries still serve (offline tolerance).
+ *   4. bundled minimum core (`src/llm/knowledge/guides/{app}.json`) — only
+ *      msedge/notepad ship today; the rest of the registry is remote.
+ *
+ * Returns null when nothing resolves. Pure sync — never blocks the agent
+ * loop on the network. For remote-only guides on first encounter, callers
+ * should ALSO fire `prefetchGuideForApp(app)` so the NEXT call has data.
  */
 export function loadGuide(app: string): AppGuide | null {
   if (cache.has(app)) return cache.get(app) ?? null;
 
-  const userPath    = path.join(userGuidesDir(), `${app}.json`);
-  const bundledPath = path.join(bundledGuidesDir(), `${app}.json`);
-  const target = fs.existsSync(userPath) ? userPath : (fs.existsSync(bundledPath) ? bundledPath : null);
-
-  if (!target) {
-    cache.set(app, null);
-    return null;
+  // 1. User override — direct file read (the learn_app sink).
+  const userPath = path.join(userGuidesDir(), `${app}.json`);
+  if (fs.existsSync(userPath)) {
+    try {
+      const guide = adoptGuide(JSON.parse(fs.readFileSync(userPath, 'utf8')));
+      cache.set(app, guide);
+      if (guide) return guide;
+    } catch { /* fall through */ }
   }
 
-  try {
-    const raw = fs.readFileSync(target, 'utf8');
-    const guide = JSON.parse(raw) as AppGuide;
-    // Community-contributed guides often omit `name` (display) and use `app`
-    // for both. Normalize on load so prompt renderers never emit "APP: undefined".
-    if (!guide.name) guide.name = guide.app;
+  // 2. Remote-fetch cache (populated by prefetchGuideForApp / `guides install`).
+  const cached = getCached(app);
+  if (cached) {
+    const guide = adoptGuide(cached.guide);
     cache.set(app, guide);
-    return guide;
-  } catch {
-    cache.set(app, null);
-    return null;
+    if (guide) {
+      touchUsage(app);
+      return guide;
+    }
   }
+
+  // 3. Bundled minimum core.
+  const bundledPath = path.join(bundledGuidesDir(), `${app}.json`);
+  if (fs.existsSync(bundledPath)) {
+    try {
+      const guide = adoptGuide(JSON.parse(fs.readFileSync(bundledPath, 'utf8')));
+      cache.set(app, guide);
+      if (guide) return guide;
+    } catch { /* fall through */ }
+  }
+
+  cache.set(app, null);
+  return null;
+}
+
+/**
+ * Fire-and-forget remote prefetch. Idempotent within a session. Used by the
+ * preprocessor when it detects an active app: kicks off a remote fetch so the
+ * cache is warm for the next task (or the current one, if the agent reaches
+ * back to load before the fetch completes — but we don't wait for it).
+ *
+ * Errors are swallowed; this is a perf-only path.
+ */
+export function prefetchGuideForApp(app: string): void {
+  if (!app || inFlightPrefetch.has(app)) return;
+  inFlightPrefetch.add(app);
+  // Don't await; the promise lives on the microtask queue.
+  fetchGuide(app)
+    .then(g => {
+      if (g) {
+        // Invalidate the in-memory miss-cache so the next sync loadGuide
+        // picks up the fresh disk cache.
+        cache.delete(app);
+      }
+    })
+    .catch(() => { /* logged inside remote-loader */ });
 }
 
 /** Clear the cache — tests call this when they mutate the user override dir. */
 export function clearCache(): void {
   cache.clear();
+  inFlightPrefetch.clear();
 }
 
 // ── Write path (learn_app MCP tool) ─────────────────────────────────────────

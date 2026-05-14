@@ -1,9 +1,30 @@
 /**
  * Preprocessor tests — strategy decisions per task shape.
+ *
+ * Phase 3 (marketplace) moved most curated guides to seed-registry/. Point
+ * the loader's bundled dir at the seed copy for the duration of the suite
+ * so the gmail/outlook/etc. knowledge-injection assertions still resolve.
+ * Also disable the remote registry so prefetchGuideForApp doesn't try to
+ * hit the network during tests.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import * as path from 'path';
 import { preprocess, requiresLlm, usesVision } from '../core/preprocessor/preprocessor';
+
+const SEED_REGISTRY = path.resolve(__dirname, '../../seed-registry/guides');
+const ORIG_BUNDLED  = process.env.CLAWD_BUNDLED_GUIDES_DIR;
+const ORIG_OFF      = process.env.CLAWD_GUIDES_REGISTRY_OFF;
+beforeAll(() => {
+  process.env.CLAWD_BUNDLED_GUIDES_DIR = SEED_REGISTRY;
+  process.env.CLAWD_GUIDES_REGISTRY_OFF = '1';
+});
+afterAll(() => {
+  if (ORIG_BUNDLED === undefined) delete process.env.CLAWD_BUNDLED_GUIDES_DIR;
+  else process.env.CLAWD_BUNDLED_GUIDES_DIR = ORIG_BUNDLED;
+  if (ORIG_OFF === undefined) delete process.env.CLAWD_GUIDES_REGISTRY_OFF;
+  else process.env.CLAWD_GUIDES_REGISTRY_OFF = ORIG_OFF;
+});
 
 describe('preprocess — strategy selection', () => {
   it.each([

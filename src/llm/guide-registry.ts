@@ -1,444 +1,289 @@
 /**
- * App Guide Registry CLI
+ * `clawdcursor guides` CLI — manage the remote guide registry locally.
  *
- * Fetches keyboard shortcuts from the open-source use-the-keyboard database
- * (86+ apps), converts them to ClawdCursor guide format, and installs locally.
+ * The marketplace runs out of the `clawdcursor/clawdcursor-guides` GitHub
+ * repo (configurable via `CLAWD_GUIDES_REGISTRY_URL`). The agent fetches
+ * guides on demand and caches them locally at
+ *   $CLAWD_HOME/.clawdcursor/guide-cache/{app}.json
+ * with a 7-day TTL + LRU 50-entry cap. This CLI is the user-facing
+ * inspection and maintenance layer.
  *
- * Usage:
- *   clawdcursor guides                 — list available apps
- *   clawdcursor guides install excel   — install Excel guide
- *   clawdcursor guides install --all   — install all guides
- *   clawdcursor guides list            — show installed guides
- *   clawdcursor guides remove excel    — remove a guide
+ * Commands:
+ *   clawdcursor guides list                    Show cached + their ratings
+ *   clawdcursor guides info <app>              Details for one cached guide
+ *   clawdcursor guides available               Browse the full remote registry
+ *   clawdcursor guides install <app>           Pre-warm the cache for an app
+ *   clawdcursor guides install --all           Pre-warm everything (offline prep)
+ *   clawdcursor guides refresh <app>           Force re-fetch one app
+ *   clawdcursor guides remove <app>            Evict one cached app
+ *   clawdcursor guides clean                   Wipe the whole cache
+ *   clawdcursor guides submit <file>           Print PR instructions for a new guide
+ *   clawdcursor guides lint <file>             Run the linter against a local JSON
+ *   clawdcursor guides help                    This message
  *
- * Data source: https://github.com/aschmelyun/use-the-keyboard (MIT license)
+ * Zero remote writes: submissions go through GitHub PRs (per the marketplace
+ * trust model — see docs/guide-marketplace.md). `submit` just shows the user
+ * how to fork the repo and open a PR.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as https from 'https';
+import {
+  fetchGuide, fetchIndex, type RegistryGuideMeta,
+} from './knowledge/remote-loader';
+import {
+  getCached, listCached, evict, clearCache as clearGuideCache, CACHE_INTERNALS,
+} from './knowledge/cache';
+import { lintGuide, formatLintReport } from './knowledge/guide-linter';
 
-// ── Constants ────────────────────────────────────────────────────────────────
-
-const REGISTRY_BASE = 'https://raw.githubusercontent.com/aschmelyun/use-the-keyboard/master/content';
-const REGISTRY_INDEX = `${REGISTRY_BASE}/index.json`;
-const GUIDES_DIR = path.join(__dirname, 'knowledge', 'guides');
-
-// ── Process name mapping ─────────────────────────────────────────────────────
-// Maps registry slugs → Windows/macOS process names for auto-detection.
-// Community can extend this by editing the installed guide's processNames field.
-
-const PROCESS_MAP: Record<string, string[]> = {
-  'excel':            ['EXCEL', 'excel'],
-  'google-chrome':    ['chrome', 'Google Chrome'],
-  'firefox':          ['firefox', 'Firefox'],
-  'spotify':          ['Spotify', 'spotify'],
-  'discord':          ['Discord', 'discord'],
-  'slack':            ['Slack', 'slack'],
-  'vs-code':          ['Code', 'code'],
-  'outlook':          ['OUTLOOK', 'olk'],
-  'notion':           ['Notion', 'notion'],
-  'figma':            ['Figma', 'figma'],
-  'adobe-photoshop':  ['Photoshop', 'photoshop'],
-  'adobe-lightroom':  ['Lightroom', 'lightroom'],
-  'adobe-xd':         ['XD'],
-  'blender':          ['blender', 'Blender'],
-  'gimp':             ['gimp', 'GIMP'],
-  'obsidian':         ['Obsidian', 'obsidian'],
-  'postman':          ['Postman', 'postman'],
-  'sublime-text':     ['sublime_text', 'Sublime Text'],
-  'notepad-plus-plus':['notepad++', 'Notepad++'],
-  'vlc-player':       ['vlc', 'VLC'],
-  'microsoft-teams':  ['Teams', 'ms-teams'],
-  'zoom-windows':     ['Zoom', 'zoom'],
-  'zoom-mac':         ['zoom.us'],
-  'finder':           ['Finder'],
-  'iterm':            ['iTerm2', 'iterm2'],
-  'telegram':         ['Telegram', 'telegram'],
-  'skype':            ['Skype', 'skype'],
-  'trello':           ['trello'],
-  'jira':             ['jira'],
-  'github':           ['github'],
-  'gitlab':           ['gitlab'],
-  'gmail':            ['gmail'],
-  'youtube':          ['youtube'],
-  'reddit':           ['reddit'],
-  'twitter':          ['twitter'],
-  'netflix':          ['netflix'],
-  'soundcloud':       ['soundcloud'],
-  'todoist':          ['Todoist', 'todoist'],
-  'evernote':         ['Evernote', 'evernote'],
-  'airtable':         ['airtable'],
-  'asana':            ['asana'],
-  'monday':           ['monday'],
-  'webflow':          ['webflow'],
-  'wordpress':        ['wordpress'],
-  'shopify':          ['shopify'],
-  'unity-3d':         ['Unity', 'unity'],
-  'android-studio':   ['studio64', 'Android Studio'],
-  'xcode':            ['Xcode'],
-  'phpstorm':         ['phpstorm', 'PhpStorm'],
-  'arduino':          ['Arduino IDE', 'arduino'],
-  'putty':            ['putty', 'PuTTY'],
-  'filezilla':        ['filezilla', 'FileZilla'],
-  'audacity':         ['Audacity', 'audacity'],
-  'brave':            ['brave', 'Brave Browser'],
-  'vivaldi':          ['vivaldi', 'Vivaldi'],
-  'chrome-devtools':  ['chrome', 'Google Chrome'],  // devtools are inside Chrome
-  'sketch':           ['Sketch'],
-  'affinity-designer':['Affinity Designer'],
-  'affinity-photo':   ['Affinity Photo'],
-};
-
-// ── Fetch helper ─────────────────────────────────────────────────────────────
-
-function fetchJSON(url: string): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { 'User-Agent': 'clawdcursor-guide-registry' } }, (res) => {
-      if (res.statusCode === 301 || res.statusCode === 302) {
-        return fetchJSON(res.headers.location!).then(resolve).catch(reject);
-      }
-      if (res.statusCode !== 200) {
-        return reject(new Error(`HTTP ${res.statusCode} fetching ${url}`));
-      }
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); } catch { reject(new Error('Invalid JSON')); }
-      });
-    });
-    req.on('error', reject);
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
-  });
+// Where users go to submit. Read from env so tests / forks can override.
+function repoUrl(): string {
+  return process.env.CLAWD_GUIDES_REPO_URL
+    || 'https://github.com/clawdcursor/clawdcursor-guides';
 }
 
-// ── Converter ────────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────
 
-interface RegistryEntry {
-  slug: string;
-  title: string;
-  sections: Array<{
-    name: string;
-    shortcuts: Array<{ description: string; keys: string[] }>;
-  }>;
-  reference_link?: string;
+function fmtAge(ms: number): string {
+  const sec = Math.floor((Date.now() - ms) / 1000);
+  if (sec < 60)        return `${sec}s ago`;
+  if (sec < 3600)      return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86_400)    return `${Math.floor(sec / 3600)}h ago`;
+  return `${Math.floor(sec / 86_400)}d ago`;
 }
 
-interface ClawdGuide {
-  app: string;
-  processNames: string[];
-  source: string;
-  shortcuts: Record<string, string>;
-  sections: Record<string, Record<string, string>>;
-  tips: string[];
+function fmtRating(meta?: RegistryGuideMeta): string {
+  if (!meta) return '—';
+  const up = meta.upvotes ?? 0, down = meta.downvotes ?? 0;
+  if (up + down === 0) return '(no votes)';
+  const score = up - down;
+  const sign = score > 0 ? '+' : '';
+  return `${sign}${score} (${up}👍 ${down}👎)`;
 }
 
-function convertToGuide(entry: RegistryEntry): ClawdGuide {
-  const shortcuts: Record<string, string> = {};
-  const sections: Record<string, Record<string, string>> = {};
-
-  for (const section of entry.sections || []) {
-    const sectionShortcuts: Record<string, string> = {};
-    for (const sc of section.shortcuts || []) {
-      const keyCombo = sc.keys.join('+');
-      const desc = sc.description.replace(/\s+/g, ' ').trim();
-      // Add to flat shortcuts map (kebab-case key)
-      const shortcutKey = desc.toLowerCase()
-        .replace(/[^a-z0-9\s]/g, '')
-        .replace(/\s+/g, '_')
-        .substring(0, 40);
-      shortcuts[shortcutKey] = keyCombo;
-      sectionShortcuts[desc] = keyCombo;
-    }
-    sections[section.name] = sectionShortcuts;
-  }
-
-  return {
-    app: entry.title,
-    processNames: PROCESS_MAP[entry.slug] || [entry.slug],
-    source: entry.reference_link || `https://usethekeyboard.com/${entry.slug}`,
-    shortcuts,
-    sections,
-    tips: [
-      `Keyboard shortcuts reference for ${entry.title}.`,
-      `Source: ${entry.reference_link || 'usethekeyboard.com'}`,
-    ],
-  };
+function fmtTrust(meta?: RegistryGuideMeta): string {
+  if (!meta?.trust) return 'unverified';
+  return meta.trust;
 }
 
-// ── CLI Commands ─────────────────────────────────────────────────────────────
-
-// Available apps in the registry (cached from GitHub API)
-const AVAILABLE_APPS = [
-  '1password', 'adobe-lightroom', 'adobe-photoshop', 'adobe-xd',
-  'affinity-designer', 'affinity-photo', 'airtable', 'android-studio',
-  'apex-legends', 'apple-music', 'arduino', 'asana', 'audacity',
-  'bear-notes', 'bitbucket', 'blender', 'brave', 'chrome-devtools',
-  'code-editor-ios', 'discord', 'dropbox', 'evernote', 'excel',
-  'feedly', 'figma', 'filezilla', 'finder', 'firefox', 'fortnite',
-  'framer-x', 'gimp', 'github', 'gitlab', 'gmail', 'google-chrome',
-  'google-drive', 'guitar-pro', 'iterm', 'jira', 'kanbanmail',
-  'microsoft-teams', 'missive', 'monday', 'netflix',
-  'notepad-plus-plus', 'notion', 'obsidian', 'origami', 'outlook',
-  'phpstorm', 'pocket', 'postman', 'principle', 'proto-io', 'putty',
-  'quip', 'reddit', 'roam', 'sequelpro', 'shopify', 'sketch',
-  'sketchup', 'skype', 'slack', 'soundcloud', 'spotify',
-  'sublime-text', 'superhuman', 'tableplus', 'telegram', 'ticktick',
-  'todoist', 'transmit', 'trello', 'twitter', 'unity-3d', 'vivaldi',
-  'vlc-player', 'vs-code', 'webflow', 'wordpress', 'xcode',
-  'youtube', 'zoom-mac', 'zoom-windows',
-];
+// ── Commands ───────────────────────────────────────────────────────────────
 
 export async function guidesCommand(args: string[]): Promise<void> {
-  const subcommand = args[0]?.toLowerCase();
+  const sub = (args[0] || 'help').toLowerCase();
 
-  if (!subcommand || subcommand === 'help') {
-    printUsage();
-    return;
-  }
-
-  if (subcommand === 'list') {
-    listInstalled();
-    return;
-  }
-
-  if (subcommand === 'available') {
-    listAvailable();
-    return;
-  }
-
-  if (subcommand === 'install') {
-    const target = args[1]?.toLowerCase();
-    if (!target) {
-      console.log('\n   Usage: clawdcursor guides install <app-name>');
-      console.log('   Usage: clawdcursor guides install --all\n');
-      console.log('   Run `clawdcursor guides available` to see all apps.\n');
-      return;
+  switch (sub) {
+    case 'help':
+    case '--help':
+    case '-h':
+      return printUsage();
+    case 'list':      return listCachedGuides();
+    case 'info':      return infoGuide(args[1]);
+    case 'available': return listAvailable();
+    case 'install': {
+      const target = args[1];
+      if (!target) return console.log('\n   Usage: clawdcursor guides install <app|--all>\n');
+      if (target === '--all') return installAll();
+      return installOne(target);
     }
-    if (target === '--all') {
-      await installAll();
-    } else {
-      await installGuide(target);
-    }
-    return;
+    case 'refresh': return refreshGuide(args[1]);
+    case 'remove':  return removeOne(args[1]);
+    case 'clean':   return cleanAll();
+    case 'submit':  return submitInstructions(args[1]);
+    case 'lint':    return lintLocal(args[1]);
+    default:
+      // Treat bare name as install — friendlier for first-time users.
+      return installOne(sub);
   }
-
-  if (subcommand === 'remove') {
-    const target = args[1]?.toLowerCase();
-    if (!target) {
-      console.log('\n   Usage: clawdcursor guides remove <app-name>\n');
-      return;
-    }
-    removeGuide(target);
-    return;
-  }
-
-  if (subcommand === 'search') {
-    const query = args.slice(1).join(' ').toLowerCase();
-    searchGuides(query);
-    return;
-  }
-
-  // If no subcommand matched, treat as app name to install
-  await installGuide(subcommand);
 }
 
 function printUsage(): void {
   console.log(`
-  /\\___/\\
- ( >^.^< )  ClawdCursor App Guides
+  /\\___/\\   ClawdCursor Guides Marketplace
+ ( >^.^< )  ${repoUrl()}
   )     (
  (_)_(_)_)
 
-   clawdcursor guides available          List all 86+ downloadable app guides
-   clawdcursor guides search <query>     Search for an app guide
-   clawdcursor guides install <app>      Install a guide (e.g. "excel", "spotify")
-   clawdcursor guides install --all      Install all available guides
-   clawdcursor guides list               Show installed guides
-   clawdcursor guides remove <app>       Remove an installed guide
+  Inspect cache
+    clawdcursor guides list                  Show every cached guide + rating
+    clawdcursor guides info <app>            Cache metadata for one app
 
-   Guides teach ClawdCursor's AI how to efficiently operate each app —
-   keyboard shortcuts, workflows, and UI tips. Loaded automatically at runtime.
+  Browse the registry
+    clawdcursor guides available             List every published guide (network)
 
-   Data source: usethekeyboard.com (MIT license, 86+ apps)
-   Custom guides: add JSON files to the guides/ directory
+  Manage the cache
+    clawdcursor guides install <app>         Pre-warm cache for one app
+    clawdcursor guides install --all         Pre-warm everything (offline prep)
+    clawdcursor guides refresh <app>         Force re-fetch one app
+    clawdcursor guides remove <app>          Evict one app from cache
+    clawdcursor guides clean                 Wipe the whole cache
+
+  Author / submit
+    clawdcursor guides lint <file.json>      Validate a local guide before PR
+    clawdcursor guides submit <file.json>    Print PR instructions
+
+  How it works
+    Guides live in a public GitHub repo. The agent fetches on demand and
+    caches locally for 7 days. Frequently-used guides survive LRU eviction.
+    Submissions are GitHub PRs — see ${repoUrl()}/blob/main/CONTRIBUTING.md
 `);
 }
 
-function listInstalled(): void {
-  if (!fs.existsSync(GUIDES_DIR)) {
-    console.log('\n   No guides installed yet. Run: clawdcursor guides install <app>\n');
+function listCachedGuides(): void {
+  const entries = listCached();
+  if (entries.length === 0) {
+    console.log('\n   No guides cached yet. They populate as the agent encounters apps.');
+    console.log('   To pre-warm: clawdcursor guides install <app>\n');
     return;
   }
-
-  const files = fs.readdirSync(GUIDES_DIR).filter(f => f.endsWith('.json'));
-  if (files.length === 0) {
-    console.log('\n   No guides installed yet. Run: clawdcursor guides install <app>\n');
-    return;
-  }
-
-  console.log(`\n   📖 Installed guides (${files.length}):\n`);
-  for (const file of files.sort()) {
-    try {
-      const guide = JSON.parse(fs.readFileSync(path.join(GUIDES_DIR, file), 'utf8'));
-      const shortcutCount = Object.keys(guide.shortcuts || {}).length;
-      const processNames = (guide.processNames || []).join(', ');
-      console.log(`   ${file.padEnd(25)} ${(guide.app || '').padEnd(25)} ${shortcutCount} shortcuts   [${processNames}]`);
-    } catch {
-      console.log(`   ${file.padEnd(25)} (unreadable)`);
-    }
+  console.log(`\n   Cached guides (${entries.length}/${CACHE_INTERNALS.LRU_CAPACITY}):\n`);
+  console.log(`   ${'APP'.padEnd(24)} ${'FETCHED'.padEnd(12)} ${'USES'.padEnd(6)} SOURCE`);
+  for (const { app, meta } of entries) {
+    console.log(
+      `   ${app.padEnd(24)} ${fmtAge(meta.fetchedAt).padEnd(12)} ${String(meta.usageCount).padEnd(6)} ${meta.source}`
+    );
   }
   console.log('');
 }
 
-function listAvailable(): void {
-  console.log(`\n   📦 Available app guides (${AVAILABLE_APPS.length}):\n`);
-
-  // Check which are installed
-  const installed = new Set<string>();
-  if (fs.existsSync(GUIDES_DIR)) {
-    for (const f of fs.readdirSync(GUIDES_DIR).filter(f => f.endsWith('.json'))) {
-      installed.add(f.replace('.json', '').toLowerCase());
-    }
+function infoGuide(app?: string): void {
+  if (!app) return console.log('\n   Usage: clawdcursor guides info <app>\n');
+  const entry = getCached(app);
+  if (!entry) {
+    console.log(`\n   "${app}" is not cached locally. Try:`);
+    console.log(`     clawdcursor guides install ${app}\n`);
+    return;
   }
-
-  const cols = 3;
-  for (let i = 0; i < AVAILABLE_APPS.length; i += cols) {
-    const row = AVAILABLE_APPS.slice(i, i + cols).map(app => {
-      const marker = installed.has(app) ? ' ✅' : '';
-      return `   ${app}${marker}`.padEnd(28);
-    }).join('');
-    console.log(row);
-  }
-
-  console.log(`\n   Install: clawdcursor guides install <app-name>`);
-  console.log(`   Install all: clawdcursor guides install --all\n`);
+  const { guide, meta, stale } = entry;
+  console.log(`\n   ${guide.name || guide.app}`);
+  console.log(`     app key:   ${guide.app}`);
+  console.log(`     fetched:   ${new Date(meta.fetchedAt).toISOString()} (${fmtAge(meta.fetchedAt)})${stale ? ' [STALE]' : ''}`);
+  console.log(`     usage:     ${meta.usageCount} times`);
+  console.log(`     source:    ${meta.source}`);
+  console.log(`     shortcuts: ${Object.keys(guide.shortcuts || {}).length}`);
+  console.log(`     workflows: ${Object.keys(guide.workflows || {}).length}`);
+  console.log(`     tips:      ${(guide.tips ?? []).length}`);
+  console.log('');
 }
 
-function searchGuides(query: string): void {
-  if (!query) {
-    console.log('\n   Usage: clawdcursor guides search <query>\n');
+async function listAvailable(): Promise<void> {
+  console.log('\n   Fetching registry index...');
+  const idx = await fetchIndex();
+  if (!idx) {
+    console.log('   Could not reach the registry. Check network or CLAWD_GUIDES_REGISTRY_URL.\n');
     return;
   }
-  const matches = AVAILABLE_APPS.filter(app => app.includes(query));
-  if (matches.length === 0) {
-    console.log(`\n   No apps matching "${query}". Try: clawdcursor guides available\n`);
-    return;
+  const apps = Object.entries(idx.guides);
+  console.log(`\n   Available guides (${apps.length}) — index generated ${idx.generatedAt ?? '(no timestamp)'}\n`);
+  console.log(`   ${'APP'.padEnd(24)} ${'TRUST'.padEnd(12)} ${'RATING'.padEnd(20)} VERSION`);
+  for (const [app, meta] of apps.sort((a, b) => a[0].localeCompare(b[0]))) {
+    console.log(
+      `   ${app.padEnd(24)} ${fmtTrust(meta).padEnd(12)} ${fmtRating(meta).padEnd(20)} ${meta.version ?? ''}`
+    );
   }
-  console.log(`\n   🔍 Apps matching "${query}" (${matches.length}):\n`);
-  for (const app of matches) {
-    const processNames = PROCESS_MAP[app]?.join(', ') || '(auto-detect)';
-    console.log(`   ${app.padEnd(25)} → ${processNames}`);
-  }
-  console.log(`\n   Install: clawdcursor guides install <app-name>\n`);
+  console.log('');
 }
 
-async function installGuide(slug: string): Promise<void> {
-  // Normalize common names
-  const normalized = slug
-    .replace(/\s+/g, '-')
-    .replace(/^ms-/, 'microsoft-')
-    .replace(/^vscode$/, 'vs-code')
-    .replace(/^chrome$/, 'google-chrome')
-    .replace(/^teams$/, 'microsoft-teams')
-    .replace(/^ps$/, 'adobe-photoshop')
-    .replace(/^lr$/, 'adobe-lightroom')
-    .replace(/^notepad\+\+$/, 'notepad-plus-plus');
-
-  if (!AVAILABLE_APPS.includes(normalized)) {
-    // Fuzzy match
-    const fuzzy = AVAILABLE_APPS.filter(a => a.includes(normalized) || normalized.includes(a));
-    if (fuzzy.length > 0) {
-      console.log(`\n   "${slug}" not found. Did you mean:`);
-      for (const f of fuzzy) console.log(`     - ${f}`);
-      console.log('');
-      return;
-    }
-    console.log(`\n   ❌ "${slug}" not found in registry.`);
-    console.log(`   Run: clawdcursor guides available\n`);
+async function installOne(app: string): Promise<void> {
+  if (!app) return;
+  console.log(`   Fetching ${app}...`);
+  const guide = await fetchGuide(app, { force: true });
+  if (!guide) {
+    console.log(`   ✗ Could not install "${app}". Either it isn't in the registry, the fetch failed, or it failed lint.`);
+    console.log(`   Browse: clawdcursor guides available\n`);
     return;
   }
-
-  const url = `${REGISTRY_BASE}/${normalized}.json`;
-  console.log(`   ⬇️  Downloading ${normalized}...`);
-
-  try {
-    const entry = await fetchJSON(url) as RegistryEntry;
-    const guide = convertToGuide(entry);
-
-    // Ensure guides directory exists
-    if (!fs.existsSync(GUIDES_DIR)) {
-      fs.mkdirSync(GUIDES_DIR, { recursive: true });
-    }
-
-    // Determine filename — use first process name or slug
-    const filename = (guide.processNames[0] || normalized) + '.json';
-    const filepath = path.join(GUIDES_DIR, filename);
-
-    // Merge with existing guide if it has custom workflows/tips
-    if (fs.existsSync(filepath)) {
-      try {
-        const existing = JSON.parse(fs.readFileSync(filepath, 'utf8'));
-        // Preserve custom workflows, layout, and tips from hand-crafted guides
-        if (existing.workflows) guide.tips.push('(Custom workflows preserved from existing guide)');
-        const merged = {
-          ...guide,
-          workflows: existing.workflows || undefined,
-          layout: existing.layout || undefined,
-          tips: [...new Set([...(existing.tips || []), ...guide.tips])],
-        };
-        fs.writeFileSync(filepath, JSON.stringify(merged, null, 2));
-        const totalShortcuts = Object.keys(guide.shortcuts).length;
-        console.log(`   ✅ Updated ${filename} — ${totalShortcuts} shortcuts (custom data preserved)`);
-        return;
-      } catch { /* overwrite if existing is malformed */ }
-    }
-
-    fs.writeFileSync(filepath, JSON.stringify(guide, null, 2));
-    const totalShortcuts = Object.keys(guide.shortcuts).length;
-    console.log(`   ✅ Installed ${filename} — ${entry.title}, ${totalShortcuts} shortcuts`);
-
-  } catch (err: any) {
-    console.error(`   ❌ Failed to install "${normalized}": ${err.message}`);
-  }
+  console.log(`   ✓ ${guide.name || guide.app} cached (${Object.keys(guide.shortcuts || {}).length} shortcuts, ${Object.keys(guide.workflows || {}).length} workflows)\n`);
 }
 
 async function installAll(): Promise<void> {
-  console.log(`\n   📦 Installing all ${AVAILABLE_APPS.length} guides...\n`);
-
-  let success = 0;
-  let failed = 0;
-
-  for (const app of AVAILABLE_APPS) {
-    try {
-      await installGuide(app);
-      success++;
-      // Small delay to avoid rate limiting
-      await new Promise(r => setTimeout(r, 200));
-    } catch {
-      failed++;
-    }
+  const idx = await fetchIndex();
+  if (!idx) {
+    console.log('   Could not reach the registry.\n');
+    return;
   }
-
-  console.log(`\n   ✅ Installed ${success} guides${failed > 0 ? `, ${failed} failed` : ''}\n`);
+  const apps = Object.keys(idx.guides);
+  console.log(`\n   Pre-warming ${apps.length} guides...\n`);
+  let ok = 0, fail = 0;
+  for (const app of apps) {
+    const guide = await fetchGuide(app, { force: true });
+    if (guide) { console.log(`     ✓ ${app}`); ok++; }
+    else       { console.log(`     ✗ ${app}`); fail++; }
+  }
+  console.log(`\n   Done: ${ok} ok, ${fail} failed.\n`);
 }
 
-function removeGuide(slug: string): void {
-  const normalized = slug.replace(/\s+/g, '-');
+async function refreshGuide(app?: string): Promise<void> {
+  if (!app) return console.log('\n   Usage: clawdcursor guides refresh <app>\n');
+  return installOne(app); // force re-fetch
+}
 
-  // Try exact match first, then search by slug
-  const candidates = [
-    path.join(GUIDES_DIR, normalized + '.json'),
-    path.join(GUIDES_DIR, (PROCESS_MAP[normalized]?.[0] || normalized) + '.json'),
-  ];
-
-  for (const filepath of candidates) {
-    if (fs.existsSync(filepath)) {
-      fs.unlinkSync(filepath);
-      console.log(`   🗑️  Removed ${path.basename(filepath)}`);
-      return;
-    }
+function removeOne(app?: string): void {
+  if (!app) return console.log('\n   Usage: clawdcursor guides remove <app>\n');
+  if (!getCached(app)) {
+    console.log(`\n   "${app}" was not cached. Nothing to remove.\n`);
+    return;
   }
+  evict(app);
+  console.log(`\n   ✓ Evicted "${app}" from local cache.\n`);
+}
 
-  console.log(`   ❌ Guide "${slug}" not found. Run: clawdcursor guides list`);
+function cleanAll(): void {
+  clearGuideCache();
+  console.log('\n   ✓ Guide cache cleared. Next agent run will re-fetch from the registry.\n');
+}
+
+function lintLocal(file?: string): void {
+  if (!file) return console.log('\n   Usage: clawdcursor guides lint <path/to/guide.json>\n');
+  if (!fs.existsSync(file)) {
+    console.log(`\n   File not found: ${file}\n`);
+    return;
+  }
+  let parsed: unknown;
+  try { parsed = JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch (err) {
+    console.log(`\n   JSON parse error: ${(err as Error).message}\n`);
+    return;
+  }
+  const result = lintGuide(parsed);
+  console.log('\n' + formatLintReport(result, path.basename(file)) + '\n');
+}
+
+function submitInstructions(file?: string): void {
+  if (!file) {
+    console.log(`\n   Usage: clawdcursor guides submit <path/to/guide.json>\n`);
+    return;
+  }
+  if (!fs.existsSync(file)) {
+    console.log(`\n   File not found: ${file}\n`);
+    return;
+  }
+  // Always lint locally first — surface errors before the user opens a PR.
+  let parsed: unknown;
+  try { parsed = JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch (err) {
+    console.log(`\n   ✗ JSON parse error: ${(err as Error).message}\n`);
+    return;
+  }
+  const result = lintGuide(parsed);
+  console.log('\n' + formatLintReport(result, path.basename(file)));
+  if (!result.ok) {
+    console.log('\n   Fix the errors above before submitting.\n');
+    return;
+  }
+  const app = (parsed as { app?: string }).app ?? '<app>';
+  console.log(`
+   To submit "${app}" to the marketplace:
+
+   1. Fork ${repoUrl()}
+   2. Add your file as guides/${app}.json
+   3. Open a Pull Request — CI re-runs lint + schema checks
+   4. Once merged, every clawdcursor install will fetch it on demand
+
+   Trust levels (set by reviewers in the PR):
+     verified     — curated by maintainers, fetched by default
+     community    — vetted PR, available with opt-in
+     experimental — un-vetted, opt-in only
+
+   See ${repoUrl()}/blob/main/CONTRIBUTING.md for review SLAs and style.
+`);
 }
