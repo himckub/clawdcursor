@@ -314,6 +314,45 @@
       border-radius: 50%; opacity: 0; transform: translate(-50%,-50%); pointer-events: none;
     }
 
+    /* Collapsible CLI section */
+    .cli-details { width: 100%; }
+    .cli-details > summary {
+      list-style: none;
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      grid-column-gap: 16px;
+      grid-row-gap: 4px;
+      align-items: center;
+      padding: 18px 22px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .cli-details > summary::-webkit-details-marker { display: none; }
+    .cli-details > summary:hover { border-color: var(--accent); }
+    .cli-details > summary .sect-label { grid-column: 1; grid-row: 1; }
+    .cli-summary-title {
+      grid-column: 1; grid-row: 2;
+      font-size: clamp(1.4rem, 2.5vw, 1.75rem);
+      font-weight: 700; letter-spacing: -0.02em; color: var(--text);
+      display: inline-flex; align-items: center; gap: 10px;
+    }
+    .cli-summary-sub {
+      grid-column: 1 / -1; grid-row: 3;
+      color: var(--text2); font-size: 0.88rem; line-height: 1.5;
+    }
+    .cli-summary-chev {
+      display: inline-block;
+      color: var(--text3);
+      font-size: 1.6rem; font-weight: 400;
+      line-height: 1;
+      transition: transform 0.2s;
+    }
+    .cli-details[open] > summary { border-color: var(--accent); }
+    .cli-details[open] > summary .cli-summary-chev { transform: rotate(90deg); color: var(--accent); }
+
     /* Responsive */
     @media (max-width: 768px) {
       .stats { grid-template-columns: repeat(2, 1fr); }
@@ -579,14 +618,17 @@ clawdcursor guides submit my-app.json</code></pre>
     </div>
   </section>
 
-  <!-- CLI reference -->
+  <!-- CLI reference (collapsed by default) -->
   <section class="sect" id="cli">
-    <div class="sect-label">CLI</div>
-    <h2>Every command.</h2>
-    <p class="sub">The CLI is for humans diagnosing an install or managing the guide cache. Agents connect via MCP.</p>
+    <details class="cli-details">
+      <summary class="cli-summary">
+        <span class="sect-label" style="margin-bottom:0;">CLI</span>
+        <span class="cli-summary-title">Every command <span class="cli-summary-chev" aria-hidden="true">›</span></span>
+        <span class="cli-summary-sub">The CLI is for humans diagnosing an install or managing the guide cache. Agents connect via MCP.</span>
+      </summary>
 
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;">
-      <pre style="background:transparent;font-size:0.82rem;line-height:1.55;color:var(--text);overflow-x:auto;"><code><span style="color:var(--text3)"># Install &amp; setup</span>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;margin-top:18px;">
+        <pre style="background:transparent;font-size:0.82rem;line-height:1.55;color:var(--text);overflow-x:auto;"><code><span style="color:var(--text3)"># Install &amp; setup</span>
 clawdcursor consent          <span style="color:var(--text3)"># one-time desktop-control authorization</span>
 clawdcursor grant            <span style="color:var(--text3)"># macOS Accessibility + Screen Recording prompts</span>
 clawdcursor doctor           <span style="color:var(--text3)"># verify permissions, configure AI provider</span>
@@ -610,7 +652,8 @@ clawdcursor guides remove &lt;app&gt;          <span style="color:var(--text3)">
 clawdcursor guides clean                 <span style="color:var(--text3)"># wipe cache</span>
 clawdcursor guides lint &lt;file.json&gt;      <span style="color:var(--text3)"># validate a local guide</span>
 clawdcursor guides submit &lt;file.json&gt;    <span style="color:var(--text3)"># lint + print PR instructions</span></code></pre>
-    </div>
+      </div>
+    </details>
   </section>
 
   <!-- Install -->

@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>App Guides Registry — Clawd Cursor</title>
+  <meta name="description" content="Browse the public app-guide registry for clawdcursor. Each guide ships shortcuts, workflows, and failure modes for a specific app. Community-contributed via GitHub PR.">
+  <meta property="og:title" content="App Guides Registry — Clawd Cursor">
+  <meta property="og:description" content="Browse community-curated app guides. Each gives a tool-calling AI agent app-specific shortcuts and workflows.">
+  <meta property="og:type" content="website">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <meta name="theme-color" content="#09090b">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!--
+    AGENT-READABLE: this page is a human-friendly view of index.json.
+    Machine clients should fetch /app-guides/index.json directly.
+    Each guide's JSON lives at /app-guides/<app>.json (flat layout).
+    Source repo for PRs: https://github.com/AmrDab/clawdcursor-guides
+  -->
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #09090b;
+      --bg2: #111113;
+      --surface: #18181b;
+      --text: #fafafa;
+      --text2: #a1a1aa;
+      --text3: #52525b;
+      --accent: #22c55e;
+      --accent2: #4ade80;
+      --blue: #3b82f6;
+      --purple: #a855f7;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --border: rgba(255,255,255,0.06);
+      --border2: rgba(255,255,255,0.12);
+    }
+    body {
+      font-family: 'Inter', -apple-system, system-ui, sans-serif;
+      background: var(--bg); color: var(--text);
+      line-height: 1.5; -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent2); }
+    code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; }
+
+    .wrap { max-width: 980px; margin: 0 auto; padding: 32px 24px 80px; }
+
+    /* Header */
+    .header {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 0 26px; border-bottom: 1px solid var(--border);
+    }
+    .header img { width: 32px; height: 32px; }
+    .header-title {
+      font-weight: 700; font-size: 0.98rem; letter-spacing: -0.01em;
+    }
+    .header-title small { color: var(--text3); font-weight: 500; }
+    .header-spacer { flex: 1; }
+    .header-link {
+      font-size: 0.82rem; color: var(--text2);
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px;
+    }
+    .header-link:hover { border-color: var(--accent); color: var(--accent2); }
+
+    /* Hero */
+    .hero { padding: 36px 0 28px; }
+    .hero-label {
+      color: var(--accent); font-size: 0.7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px;
+    }
+    .hero h1 {
+      font-size: clamp(1.8rem, 4vw, 2.6rem);
+      font-weight: 800; letter-spacing: -0.03em; margin-bottom: 12px;
+    }
+    .hero h1 .gr {
+      background: linear-gradient(135deg, var(--accent), #06b6d4, var(--purple));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 0.98rem; color: var(--text2); max-width: 640px;
+      line-height: 1.65; margin-bottom: 20px;
+    }
+    .hero p code {
+      background: var(--surface); padding: 1px 7px; border-radius: 4px;
+      color: var(--accent2); font-size: 0.9em;
+    }
+
+    /* Meta strip */
+    .meta-strip {
+      display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.82rem;
+      color: var(--text3); padding: 10px 0 0;
+    }
+    .meta-strip span { display: inline-flex; align-items: center; gap: 6px; }
+    .meta-dot {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+    }
+
+    /* Toolbar */
+    .toolbar {
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      margin: 28px 0 16px;
+    }
+    .search-box {
+      flex: 1; min-width: 220px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 9px 14px;
+      color: var(--text); font-size: 0.92rem;
+      font-family: inherit;
+    }
+    .search-box:focus { outline: none; border-color: var(--accent); }
+    .filter-btn {
+      background: transparent; color: var(--text2);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 9px 14px; font-size: 0.82rem; font-weight: 600;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .filter-btn:hover { color: var(--accent2); border-color: var(--accent); }
+    .filter-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+    /* Guide list */
+    .guide-list {
+      display: grid; grid-template-columns: 1fr; gap: 8px;
+    }
+    .guide-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto auto;
+      align-items: center;
+      gap: 16px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .guide-card:hover { border-color: var(--border2); }
+    .guide-card-main {
+      min-width: 0; display: flex; flex-direction: column; gap: 4px;
+    }
+    .guide-name {
+      font-weight: 700; font-size: 1.05rem; color: var(--text);
+      letter-spacing: -0.01em;
+      display: inline-flex; align-items: center; gap: 10px;
+    }
+    .guide-name a { color: inherit; }
+    .guide-name a:hover { color: var(--accent2); }
+    .guide-meta-line {
+      font-size: 0.78rem; color: var(--text3);
+      display: inline-flex; flex-wrap: wrap; gap: 14px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .trust-badge {
+      font-size: 0.7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      padding: 2px 8px; border-radius: 4px;
+    }
+    .trust-verified     { background: rgba(34,197,94,0.12);  color: var(--accent2); }
+    .trust-community    { background: rgba(234,179,8,0.12);  color: var(--yellow); }
+    .trust-experimental { background: rgba(239,68,68,0.12);  color: var(--red); }
+    .votes { font-size: 0.85rem; color: var(--text2); white-space: nowrap; }
+    .votes .up   { color: var(--accent2); }
+    .votes .down { color: var(--red); }
+    .guide-card-actions {
+      display: flex; gap: 8px;
+    }
+    .guide-action-btn {
+      font-size: 0.75rem; font-weight: 600;
+      padding: 5px 12px; border-radius: 6px;
+      border: 1px solid var(--border);
+      color: var(--text2); transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .guide-action-btn:hover { color: var(--accent2); border-color: var(--accent); }
+
+    /* States */
+    .loading, .empty {
+      text-align: center; color: var(--text3);
+      padding: 60px 20px; font-size: 0.9rem;
+    }
+    .err {
+      background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.25);
+      color: var(--text2); padding: 16px 20px; border-radius: 10px;
+      font-size: 0.88rem;
+    }
+
+    /* Contributing */
+    .contribute {
+      margin-top: 36px; padding: 24px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .contribute h3 { font-size: 1.05rem; margin-bottom: 8px; letter-spacing: -0.01em; }
+    .contribute p {
+      font-size: 0.88rem; color: var(--text2); line-height: 1.65;
+      margin-bottom: 10px;
+    }
+    .contribute pre {
+      background: rgba(0,0,0,0.35); padding: 12px 14px; border-radius: 6px;
+      font-size: 0.78rem; color: var(--accent2); overflow-x: auto;
+      border: 1px solid var(--border);
+    }
+
+    footer {
+      margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border);
+      font-size: 0.78rem; color: var(--text3); text-align: center;
+    }
+    footer a { color: var(--text2); margin: 0 8px; }
+    footer a:hover { color: var(--accent2); }
+
+    @media (max-width: 640px) {
+      .guide-card {
+        grid-template-columns: 1fr;
+      }
+      .guide-card-actions { justify-content: flex-end; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <a href="/" aria-label="Home"><img src="/favicon.svg" alt=""></a>
+    <div class="header-title">clawd<strong>cursor</strong> &middot; <small>app-guides</small></div>
+    <div class="header-spacer"></div>
+    <a class="header-link" href="https://github.com/AmrDab/clawdcursor-guides" target="_blank" rel="noopener">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+      Source repo
+    </a>
+  </div>
+
+  <section class="hero">
+    <div class="hero-label">Public registry</div>
+    <h1>App guides for <span class="gr">tool-calling agents</span></h1>
+    <p>
+      Each guide gives a clawdcursor agent app-specific knowledge &mdash; keyboard shortcuts, workflow patterns, layout cues, and the failure modes the agent would otherwise discover by failing first. Loaded on demand, cached locally for 7 days, validated by a linter before injection.
+    </p>
+    <p>
+      Use directly via <code>clawdcursor guides install &lt;app&gt;</code>, or read the raw JSON at <code>/app-guides/&lt;app&gt;.json</code>. The full manifest is at <code><a href="./index.json">/app-guides/index.json</a></code>.
+    </p>
+    <div class="meta-strip">
+      <span><span class="meta-dot"></span> <span id="meta-count">—</span> guides</span>
+      <span>Schema v<span id="meta-schema">—</span></span>
+      <span>Last refresh: <span id="meta-generated">—</span></span>
+    </div>
+  </section>
+
+  <div class="toolbar">
+    <input class="search-box" id="search" type="search" placeholder="Filter by name or submitter…" autocomplete="off">
+    <button class="filter-btn active" data-trust="all">All</button>
+    <button class="filter-btn" data-trust="verified">Verified</button>
+    <button class="filter-btn" data-trust="community">Community</button>
+    <button class="filter-btn" data-trust="experimental">Experimental</button>
+  </div>
+
+  <div class="guide-list" id="list" aria-live="polite">
+    <div class="loading">Loading registry…</div>
+  </div>
+
+  <section class="contribute">
+    <h3>Add or improve a guide</h3>
+    <p>
+      Open a Pull Request on <a href="https://github.com/AmrDab/clawdcursor-guides" target="_blank" rel="noopener">AmrDab/clawdcursor-guides</a>. Drop your <code>&lt;app&gt;.json</code> at the repo root. CI runs the same linter clawdcursor uses at fetch time. Once merged, this page (and every clawdcursor install) picks it up within an hour.
+    </p>
+    <pre><code># validate locally before opening the PR
+clawdcursor guides lint my-app.json
+
+# or via the standalone script in the guides repo
+node scripts/lint-guide.mjs my-app.json</code></pre>
+  </section>
+
+  <footer>
+    <p>
+      <a href="/">Home</a> &middot;
+      <a href="/app-guides/index.json">index.json</a> &middot;
+      <a href="https://github.com/AmrDab/clawdcursor-guides">Source repo</a> &middot;
+      <a href="https://github.com/AmrDab/clawdcursor">clawdcursor</a> &middot;
+      <a href="https://discord.gg/hW29nrEZ8G">Discord</a>
+    </p>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  var listEl = document.getElementById('list');
+  var countEl = document.getElementById('meta-count');
+  var schemaEl = document.getElementById('meta-schema');
+  var genEl = document.getElementById('meta-generated');
+  var search = document.getElementById('search');
+  var trustBtns = document.querySelectorAll('.filter-btn');
+
+  var allGuides = [];
+  var activeTrust = 'all';
+  var activeQuery = '';
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function fmtAge(iso) {
+    if (!iso) return 'unknown';
+    var ms = Date.now() - new Date(iso).getTime();
+    if (isNaN(ms)) return 'unknown';
+    var s = Math.floor(ms / 1000);
+    if (s < 60)        return s + 's ago';
+    if (s < 3600)      return Math.floor(s / 60) + 'm ago';
+    if (s < 86400)     return Math.floor(s / 3600) + 'h ago';
+    return Math.floor(s / 86400) + 'd ago';
+  }
+
+  function render() {
+    var q = activeQuery.toLowerCase();
+    var rows = allGuides.filter(function (g) {
+      if (activeTrust !== 'all' && g.trust !== activeTrust) return false;
+      if (!q) return true;
+      return g.app.toLowerCase().includes(q) ||
+        (g.submitter && g.submitter.toLowerCase().includes(q));
+    });
+
+    if (rows.length === 0) {
+      listEl.innerHTML = '<div class="empty">No guides match.</div>';
+      return;
+    }
+
+    var html = rows.map(function (g) {
+      var trustClass = 'trust-' + (g.trust || 'community');
+      var upvotes = g.upvotes || 0;
+      var downvotes = g.downvotes || 0;
+      var votesHtml = (upvotes + downvotes) > 0
+        ? '<span class="up">▲ ' + upvotes + '</span> <span class="down">▼ ' + downvotes + '</span>'
+        : '<span style="color:var(--text3)">— no votes</span>';
+
+      var sourceLink = 'https://github.com/AmrDab/clawdcursor-guides/blob/main/' + encodeURIComponent(g.app) + '.json';
+      var voteLink   = 'https://github.com/AmrDab/clawdcursor-guides/issues?q=' + encodeURIComponent('vote: ' + g.app);
+
+      return '<div class="guide-card">' +
+          '<div class="guide-card-main">' +
+            '<div class="guide-name">' +
+              '<a href="./' + encodeURIComponent(g.app) + '.json">' + escapeHtml(g.app) + '</a>' +
+              '<span class="trust-badge ' + trustClass + '">' + escapeHtml(g.trust || 'community') + '</span>' +
+            '</div>' +
+            '<div class="guide-meta-line">' +
+              '<span>v' + escapeHtml(g.version || '?') + '</span>' +
+              (g.submitter ? '<span>by ' + escapeHtml(g.submitter) + '</span>' : '') +
+              '<span class="votes">' + votesHtml + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="guide-card-actions">' +
+            '<a class="guide-action-btn" href="./' + encodeURIComponent(g.app) + '.json">JSON</a>' +
+            '<a class="guide-action-btn" href="' + sourceLink + '" target="_blank" rel="noopener">Source</a>' +
+            '<a class="guide-action-btn" href="' + voteLink + '" target="_blank" rel="noopener">Vote</a>' +
+          '</div>' +
+        '</div>';
+    }).join('');
+
+    listEl.innerHTML = html;
+  }
+
+  function attachFilters() {
+    search.addEventListener('input', function () {
+      activeQuery = search.value;
+      render();
+    });
+    trustBtns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        trustBtns.forEach(function (x) { x.classList.remove('active'); });
+        b.classList.add('active');
+        activeTrust = b.getAttribute('data-trust');
+        render();
+      });
+    });
+  }
+
+  fetch('./index.json', { cache: 'no-cache' })
+    .then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      var guidesObj = (data && data.guides) || {};
+      allGuides = Object.keys(guidesObj).sort().map(function (k) {
+        return Object.assign({ app: k }, guidesObj[k]);
+      });
+
+      countEl.textContent = allGuides.length;
+      schemaEl.textContent = data.schemaVersion || '?';
+      genEl.textContent = fmtAge(data.generatedAt);
+
+      attachFilters();
+      render();
+    })
+    .catch(function (err) {
+      listEl.innerHTML =
+        '<div class="err">Could not load the registry index: ' + escapeHtml(err.message || String(err)) + '. ' +
+        'Try <a href="./index.json">opening index.json directly</a> or visit the ' +
+        '<a href="https://github.com/AmrDab/clawdcursor-guides">source repo on GitHub</a>.</div>';
+    });
+})();
+</script>
+
+</body>
+</html>
