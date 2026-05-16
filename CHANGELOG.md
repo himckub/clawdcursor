@@ -2,6 +2,55 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
+## [0.9.2] - 2026-05-15 — fix: stale PID lock + orphan accumulation block MCP reconnect
+
+User-reported on Windows 11 + Claude Code: `/mcp` reconnect intermittently
+failed with `Failed to reconnect to clawdcursor: -32000`, and once it
+broke, every subsequent reconnect failed too — until the user manually
+killed zombie node processes and `rm ~/.clawdcursor/mcp.pid`. Diagnosis
+turned up two compounding bugs in the single-instance lockfile guard.
+
+### Fixed — recycled-PID false positives
+
+`isProcessAlive(pid)` used `process.kill(pid, 0)`, which on Windows is
+fooled by PID recycling: once the dead clawdcursor's PID was reassigned
+to any other live process (chrome, svchost, anything), the lockfile
+permanently looked "live" and refused all future spawns. The lockfile
+also stored only a bare integer PID, leaving no way to disambiguate.
+
+`~/.clawdcursor/{start,mcp,serve}.pid` is now JSON with schema version,
+PID, **process start time**, and mode. `claimPidFile` requires the
+recorded start time to match the OS-reported start time of the live PID
+(±5 s tolerance for OS reporting jitter) before treating it as a real
+duplicate. A recycled PID always has a later start time than the
+original, so the mismatch is unambiguous. Implementation extracted to
+`src/surface/pidfile.ts` with full unit-test coverage.
+
+Backwards compat: legacy bare-integer lockfiles cannot be verified for
+identity (no recorded start time) and are treated as stale on first
+read. First upgrade silently discards any pre-fix lock — correct
+behavior since the old format can't be trusted anyway.
+
+### Fixed — orphan MCP processes block reconnect
+
+When an editor host (Claude Code, Cursor, etc.) exited without reaping
+its `clawdcursor mcp` child, the orphan kept running with no usable
+stdio but legitimately matched the lockfile. Every subsequent host
+reconnect spawned a fresh child, lost the single-instance race, and
+exited with "already running, kill it first."
+
+The `mcp` command now treats stdin EOF / close / error as a hard exit
+signal: when the parent's stdio pipe closes, the orphan releases its
+lockfile and exits cleanly. Deterministic on every platform — no
+polling, no parent-PID inspection.
+
+### Migration
+
+No action needed. A user on a broken state should update, then a single
+manual `rm ~/.clawdcursor/mcp.pid` (or run `clawdcursor stop`) clears
+the legacy lockfile that the prior version left behind. From then on
+the new code self-heals.
+
 ## [0.9.1] - 2026-05-14 — compose-send fix + scheduled tasks
 
 A user-reported regression on macOS plus a long-missing daemon feature. No
