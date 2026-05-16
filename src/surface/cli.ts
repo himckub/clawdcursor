@@ -82,58 +82,11 @@ function authHeaders(): Record<string, string> {
 import { e } from './format';
 
 // ── Single-instance pidfile lock ─────────────────────────────────────────────
-// Prevents duplicate start/mcp/serve processes from accumulating (a common
-// source of stale processes when Cursor/editors restart the MCP server).
-
-const PID_DIR = path.join(require('os').homedir(), '.clawdcursor');
-
-function pidFilePath(mode: 'start' | 'mcp' | 'serve'): string {
-  return path.join(PID_DIR, `${mode}.pid`);
-}
-
-function isProcessAlive(pid: number): boolean {
-  try {
-    // Signal 0 checks existence without sending a real signal.
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Check if another instance is already running for this mode.
- * Returns the stale pid if a live duplicate is found, otherwise null.
- * Writes the current pid to the lockfile on success.
- */
-function claimPidFile(mode: 'start' | 'mcp' | 'serve'): number | null {
-  try {
-    if (!fs.existsSync(PID_DIR)) fs.mkdirSync(PID_DIR, { recursive: true });
-    const pidFile = pidFilePath(mode);
-    if (fs.existsSync(pidFile)) {
-      const existing = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
-      if (!isNaN(existing) && existing !== process.pid && isProcessAlive(existing)) {
-        return existing; // live duplicate found
-      }
-    }
-    fs.writeFileSync(pidFile, String(process.pid), { encoding: 'utf-8', mode: 0o600 });
-    return null;
-  } catch {
-    return null; // non-fatal — lock is best-effort
-  }
-}
-
-function releasePidFile(mode: 'start' | 'mcp' | 'serve'): void {
-  try {
-    const pidFile = pidFilePath(mode);
-    if (fs.existsSync(pidFile)) {
-      const stored = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
-      if (stored === process.pid) fs.unlinkSync(pidFile);
-    }
-  } catch {
-    // non-fatal
-  }
-}
+// Implementation lives in ./pidfile so it can be unit-tested independently.
+// The richer JSON lockfile records process start time, which lets the
+// liveness check distinguish a real live duplicate from a recycled PID
+// (the bug behind "Failed to reconnect to clawdcursor: -32000" on Windows).
+import { claimPidFile, releasePidFile, isProcessAlive, pidFilePath, readPidLoose } from './pidfile';
 
 /**
  * Graceful exit on a startup-time init failure (bad API key, no providers,
@@ -771,8 +724,9 @@ program
       try {
         const pidPath = pidFilePath(mode);
         if (!fs.existsSync(pidPath)) continue;
-        const pid = parseInt(fs.readFileSync(pidPath, 'utf-8').trim(), 10);
-        if (isNaN(pid) || pid === process.pid) { fs.unlinkSync(pidPath); continue; }
+        // readPidLoose accepts both legacy bare-int and the new JSON format.
+        const pid = readPidLoose(mode);
+        if (pid === null || pid === process.pid) { fs.unlinkSync(pidPath); continue; }
         if (isProcessAlive(pid)) {
           try {
             process.kill(pid, 'SIGTERM');
@@ -1264,6 +1218,24 @@ program
     const releaseMcp = () => { releasePidFile('mcp'); process.exit(0); };
     process.on('SIGINT', releaseMcp);
     process.on('SIGTERM', releaseMcp);
+
+    // Parent-death detection (orphan teardown).
+    //
+    // MCP stdio servers receive their JSON-RPC traffic over stdin. When the
+    // host editor (Claude Code, Cursor, etc.) exits without first killing
+    // its child, the child's stdin pipe closes immediately. Without an EOF
+    // handler the orphaned server keeps running, holds its lockfile, and
+    // blocks every subsequent reconnect with "already running, kill it
+    // first". Listen for end / close / error and shut down cleanly so the
+    // next host spawn finds a fresh slate.
+    //
+    // The MCP SDK's StdioServerTransport also installs handlers on stdin,
+    // but its close path is asynchronous and host-dependent; treating EOF
+    // as a hard exit signal here makes the orphan-reaping behavior
+    // deterministic and the same on every platform.
+    process.stdin.on('end', releaseMcp);
+    process.stdin.on('close', releaseMcp);
+    process.stdin.on('error', releaseMcp);
   });
 
 // ── `serve` deprecation alias (v0.9 PR7.4) ──
