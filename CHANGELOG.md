@@ -2,7 +2,28 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
-## [Unreleased] — auth-hardening + docs catchup + linux CI stabilization
+## [0.9.6] - 2026-05-22 — key_press crash fix + auth-hardening + docs catchup + CI stabilization
+
+### Fixed — `key_press` crashed on non-printable keys (PR #125, fixes #120)
+
+A live test driving the compact MCP surface end-to-end (Outlook email +
+Paint drawing, tools only) surfaced that `computer.key` /
+`key_press` threw `Cannot read properties of undefined (reading
+'toLowerCase')` on `Backspace`, `Enter`, `Tab`, `Delete`, and `Ctrl+*`
+combos. Root cause: `normalizeKey()` in `src/platform/keys.ts`
+called `.toLowerCase()` on its argument without guarding against
+non-string / empty input, so any code path that reached it with an
+unexpected value crashed instead of degrading gracefully.
+
+`normalizeKey()` now validates its input and throws a clear,
+debuggable error (`expected a non-empty string`) instead of a cryptic
+`TypeError`; `native-desktop.ts` guards the parsed-key path the same
+way. The fix sits on the shared `NativeDesktop` path that
+`computer.key` traverses on **all three platforms** (Windows, macOS,
+Linux). Test coverage: 9 cases at
+`src/__tests__/keys-normalization.test.ts` covering valid combos plus
+empty/undefined/non-string inputs. Thanks to first-time contributor
+@xxiaoxiong.
 
 ### Docs — `Toolbox` / `Tools` naming + restored action-enum tables (PR #111)
 
@@ -58,6 +79,18 @@ test behavior changes. Method names in the global mock match
 production usage in `src/platform/native-desktop.ts` (`mouse.click`,
 `screen.grabRegion`, etc.) so the global is a usable fallback for
 new tests.
+
+### CI — skip `mcp-orphan-teardown` on Windows + Node 20.x (PR #118)
+
+`tests/mcp-orphan-teardown.test.ts` failed intermittently on the
+`windows-latest / Node 20.x` matrix slot — always with `process did
+not exit within 5000ms`, always passing on rerun. Same failure family
+as the existing headless-Linux skip: `clawdcursor mcp` loads heavy
+native modules (nut-js, sharp's libvips, playwright) whose teardown
+doesn't finish within the 5s exit budget on Node 20 specifically
+(Node 22.x tightened process-exit semantics, so the contract holds
+there). The test now skips on Windows + Node 20.x, preserving coverage
+on macOS, Linux-with-display, and Windows + Node 22.x.
 
 
 ## [0.9.5] - 2026-05-21 — repositioning + compact `task` fix + macOS Tahoe silent screenshots + npm publish prep
