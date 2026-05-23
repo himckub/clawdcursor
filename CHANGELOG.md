@@ -2,6 +2,59 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
+## [0.9.7] - 2026-05-23 — GUI reliability + safety/efficiency tuning + npm install
+
+First release published to **npm** — `npm i -g clawdcursor` now works on
+any OS. Bundles the fixes that landed on `main` after v0.9.6.
+
+### Fixed — Save As dialog reliability on Windows (PR #128, #122 + #123)
+
+- **`set_field_value` on a ComboBox+Edit composite** (e.g. the Save As
+  filename field) returned `set_field_value failed for 'undefined'`. Fixed
+  with a PS-level inner-Edit-child retry plus a TS keyboard fallback that
+  targets the widest-bounds element sharing the name (the input, not the
+  label) when ValuePattern is absent (Win11 XAML dialogs).
+- **Clicks could land on a background window** when a dialog sat over
+  another window (focus/DPI race). `WindowsAdapter.mouseClick` now calls
+  `ensureForegroundAtPoint(x, y)` first — `WindowFromPoint` →
+  `GetAncestor(GA_ROOT)`, a no-op fast path when already foreground, else
+  the `AttachThreadInput` + `SetForegroundWindow` dance to beat the
+  Windows foreground lock.
+- #121 (triple_click in Save As) was reviewed and intentionally **not**
+  changed: `mouse_triple_click` is documented as "selects a paragraph",
+  so rerouting it to Ctrl+A globally would break that contract elsewhere.
+
+### Fixed — safety gate no longer flags typed prose (PR #127, #124)
+
+The destructive-label patterns (`\bsend\b`, `\bconfirm\b`, …) are meant
+for the label of a control being *activated* (clicked/invoked), but the
+MCP gate also matched them against the `text` payload of typing tools.
+Typing "…verification to confirm reliable automation" tripped a confirm
+gate. Fixed by skipping the patterns for typing canonical tools
+(`type_text`, `cdp_type`) via a `TYPING_TOOLS` denylist — click/invoke
+label safety (incl. `cdp_click` by visible text) is fully preserved.
+
+### Added — explicit token-cost hierarchy in the agent prompt (PR #129)
+
+`buildSystemPrompt` (also served to external agents via
+`get_system_prompt`) now states the cost ladder so any agent climbs
+cheap→expensive deliberately: act (click/type/key) < inspect
+(find_element/get_element) < read a11y tree / OCR (read_screen) <
+screenshot. Reinforces "read the attached a11y snapshot before spending
+a screenshot."
+
+### Security — qs DoS bump (PR #126)
+
+`qs` 6.14.2 → 6.15.2 (transitive via express/supertest) — patches a
+remotely-triggerable `qs.stringify` DoS.
+
+### Added — npm install + website/README npm one-liner
+
+`clawdcursor` is now published to npm. README Quickstart and the website
+Install section lead with `npm i -g clawdcursor` (with the macOS
+native-helper note); the OS installer scripts remain for the
+clone-build-link path that handles the macOS native build automatically.
+
 ## [0.9.6] - 2026-05-22 — key_press crash fix + auth-hardening + docs catchup + CI stabilization
 
 ### Fixed — `key_press` crashed on non-printable keys (PR #125, fixes #120)

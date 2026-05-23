@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Clawd Cursor v0.9.6 — the local MCP server for safe desktop control</title>
-  <meta name="description" content="Clawd Cursor v0.9.6 — the local MCP server that gives any agent safe desktop control. 6 compact compound tools (computer, accessibility, window, system, browser, task), MCP stdio + HTTP, single safety.evaluate() chokepoint, no telemetry, Windows + macOS + Linux.">
-  <meta property="og:title" content="Clawd Cursor v0.9.6">
+  <title>Clawd Cursor v0.9.7 — the local MCP server for safe desktop control</title>
+  <meta name="description" content="Clawd Cursor v0.9.7 — the local MCP server that gives any agent safe desktop control. 6 compact compound tools (computer, accessibility, window, system, browser, task), MCP stdio + HTTP, single safety.evaluate() chokepoint, no telemetry, Windows + macOS + Linux.">
+  <meta property="og:title" content="Clawd Cursor v0.9.7">
   <meta property="og:description" content="The local MCP server that gives any agent safe desktop control. Any model. Any app. One MCP entry. Local-only. 6 compact tools, single safety chokepoint, no telemetry.">
 
   <meta property="og:type" content="website">
@@ -15,7 +15,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
   <!--
-    AGENT-READABLE SUMMARY (v0.9.5)
+    AGENT-READABLE SUMMARY (v0.9.7)
     clawdcursor: the local MCP server that gives any agent safe desktop control.
 
     ── WHAT IT IS ──────────────────────────────────────────────────────────────
@@ -405,7 +405,7 @@
 
   <!-- Hero -->
   <div class="hero">
-    <div class="hero-badge"><div class="pulse"></div> v0.9.6 — latest stable</div>
+    <div class="hero-badge"><div class="pulse"></div> v0.9.7 — latest stable</div>
     <h1>The local MCP server that gives<br><span class="gr">any agent safe desktop control</span></h1>
     <p>Any model. Any app. One MCP entry. Local-only. 6 compact tools, single safety chokepoint, no telemetry. v0.9: MCP-only protocol, Reflector feedback, guides marketplace.</p>
     <div class="hero-btns">
@@ -737,6 +737,12 @@ clawdcursor uninstall        <span style="color:var(--text3)"># remove all clawd
     <h2>One line per OS.</h2>
     <p class="sub">Providers auto-detected.</p>
 
+    <div class="code-box" style="display:block;margin-bottom:20px;">
+      <div class="code-hd"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span>npm &mdash; any OS</span></div>
+      <pre><code><span class="c-cmd">npm i -g clawdcursor</span>   <span class="c-comment"># now on npm</span></code></pre>
+    </div>
+    <p class="sub" style="margin-top:-8px;">Windows &amp; Linux work as-is. macOS: also run <code style="font-size:0.95em">clawdcursor grant</code> to build the native helper. Or use the per-OS installer below, which handles everything.</p>
+
     <div class="os-tabs">
       <button class="os-tab active" onclick="switchOS('windows')">Windows</button>
       <button class="os-tab" onclick="switchOS('macos')">macOS</button>
@@ -768,7 +774,7 @@ clawdcursor uninstall        <span style="color:var(--text3)"># remove all clawd
 <span class="c-cmd">clawdcursor mcp</span>               <span class="c-comment"># OR `clawdcursor agent` — see "Pick a mode" above</span></code></pre>
     </div>
 
-    <p style="color:var(--text3);font-size:0.78rem;margin-top:10px;">Node.js 20+. Localhost only, bearer-token auth on every HTTP request. Installer clones into <code style="font-size:0.95em">~/clawdcursor</code>, builds, and <code style="font-size:0.95em">npm link</code>s a global shim. Pin a version with <code style="font-size:0.95em">$env:VERSION='v0.9.6'</code> (PowerShell) or <code style="font-size:0.95em">VERSION=v0.9.6</code> (bash) before running the installer.</p>
+    <p style="color:var(--text3);font-size:0.78rem;margin-top:10px;">Node.js 20+. Localhost only, bearer-token auth on every HTTP request. Installer clones into <code style="font-size:0.95em">~/clawdcursor</code>, builds, and <code style="font-size:0.95em">npm link</code>s a global shim. Pin a version with <code style="font-size:0.95em">$env:VERSION='v0.9.7'</code> (PowerShell) or <code style="font-size:0.95em">VERSION=v0.9.7</code> (bash) before running the installer.</p>
   </section>
 
 </div>
@@ -786,7 +792,7 @@ clawdcursor uninstall        <span style="color:var(--text3)"># remove all clawd
 </div>
 
 <footer>
-  <p>clawd<strong>cursor</strong> v0.9.6 · localhost only · MIT ·
+  <p>clawd<strong>cursor</strong> v0.9.7 · localhost only · MIT ·
     <a href="https://clawdcursor.com">Home</a> ·
     <a href="https://github.com/AmrDab/clawdcursor">GitHub</a> ·
     <a href="https://github.com/AmrDab/clawdcursor/blob/main/CHANGELOG.md">Changelog</a> ·
