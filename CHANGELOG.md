@@ -2,6 +2,34 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
+## [0.9.9] - 2026-05-24 — security hardening + registry perf
+
+### Security — AppleScript backslash escaping + crypto host token (PR #136)
+
+From a full triage of the open CodeQL alerts (only 2 were genuine; the
+other 20 were by-design for a local single-user tool and were dismissed
+with justifications):
+
+- **AppleScript injection (CodeQL #61–64, HIGH).**
+  `buildMacWindowTargetClause` escaped `"` but not `\` before embedding
+  `processName`/`title` into an `osascript -e` double-quoted string. `\` is
+  an AppleScript escape character and these fields are LLM/screen-supplied,
+  so a value containing a backslash could break out of the string literal.
+  Now escapes `\` then `"` at all four sites (macOS-only path).
+- **Host-helper token (CodeQL #77, HIGH).** Replaced `Math.random()` (not
+  cryptographically secure) with `crypto.randomBytes(24)`, and the
+  check-then-write with an exclusive create (`flag: 'wx'`) that reads the
+  existing token on `EEXIST` — closing a TOCTOU window.
+
+### Performance — memoize the granular tool registry (PR #116)
+
+`getTool(name)` resolved via `getAllTools().find(...)` and `getTools()`
+re-spread all 14 `get*Tools()` sources on every call, so every single-tool
+lookup (the dispatch hot path) rebuilt the entire registry. The granular
+definitions are static, so they're now assembled once and cached;
+`getTools()`/`getAllTools()` still return fresh copies (mutation-safe), and
+`getTool()` searches the cache directly. No behavior change.
+
 ## [0.9.8] - 2026-05-24 — complete the Toolbox + registry metadata + site refresh
 
 ### Added — smart_* and URI escape hatches reach the compound Toolbox (PR #135)
